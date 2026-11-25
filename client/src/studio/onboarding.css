@@ -19,3 +19,8 @@
 #kodexa-setup fieldset{min-width:0;border:1px solid #65708b;background:var(--panel);border-radius:10px;padding:12px;margin:0}
 #kodexa-setup legend{color:var(--accent);font-size:13px;padding:0 5px}
 #kodexa-setup .kodexa-note{font-size:13px;margin-top:16px}
+
+#kodexa-setup[data-theme=pixel]{--accent:#E9C46A;--panel:#293241;--base:#1c2532;border-radius:10px;box-shadow:0 5px 0 #101620}
+#kodexa-setup h1 img{display:block;max-width:100%;height:auto;margin:0 auto 12px}
+#kodexa-setup[data-theme=pixel] fieldset{border-color:#62776f;box-shadow:0 3px 0 #121c28}
+#kodexa-setup[data-theme=pixel] button.kodexa-primary{box-shadow:inset 0 -3px 0 #0003}
