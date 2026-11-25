@@ -17,7 +17,7 @@ export function projectWorkspace(root:string,id:string):string{
   return path;
 }
 const instructions:Record<DeliveryRole,string>={
-  dev:'Implemente o projeto aprovado com arquivos reais no diretório de trabalho. Preserve arquivos existentes, mantenha um README, inclua testes e instruções de execução. Não faça deploy, push, instalação global ou alterações fora do diretório. Não solicite segredos.',
+  dev:'Implemente o projeto aprovado com arquivos reais no diretório de trabalho. Preserve arquivos existentes, mantenha um README, inclua testes e instruções de execução. Para aplicações web, quando tecnicamente adequado, use index.html ou static/index.html com CSS e JS locais para permitir prévia; documente a porta privada e a origem HTTPS de desenvolvimento do Codespaces sem enfraquecer autenticação, CSRF ou política de frames. Não faça deploy, push, instalação global ou alterações fora do diretório. Não solicite segredos.',
   qa:'Inspecione os arquivos produzidos, execute os testes locais disponíveis e corrija regressões dentro do diretório. Informe exatamente os comandos executados, resultados e limitações. Não declare sucesso sem evidência.',
   shield:'Revise o código produzido e corrija falhas de segurança dentro do diretório. Verifique exposição de segredos, autenticação quando aplicável, dependências, entradas não confiáveis e permissões. Execute verificações locais disponíveis. Informe riscos restantes e não faça publicação.',
 };

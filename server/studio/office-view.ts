@@ -1,4 +1,4 @@
-import {STAGES,DELIVERY_ROLES,type StudioInfo,type StudioRole,type StudioProject} from '../../shared/studio-project';
+import {STAGES,DELIVERY_ROLES,nextPlanningStages,type StudioInfo,type StudioRole,type StudioProject} from '../../shared/studio-project';
 import type {AgentInfo,ActivityKind} from '../../shared/types';
 import {hash32} from '../../shared/hash';
 export const STUDIO_ROOM='kodexa:studio',STUDIO_ACCOUNT='kodexa:managed';
@@ -16,9 +16,11 @@ function stage(p:StudioProject|undefined,role:StudioRole):{phase:Phase;state:Sta
   }
   if(role==='scout'&&p?.state==='approval')return {phase:'planning',state:'waiting',text:'Aguardando aprovação em Projetos IA',kind:'ask',icon:'✋'};
   if(plan)return {phase:'planning',state:'completed',text:'Planejamento concluído',kind:'done',icon:'✓'};
-  if(p&&STAGES[p.stages.length]?.[0]===role){
-    if(p.state==='running')return {phase:'planning',state:'working',text:'Planejamento em execução',kind:'plan',icon:'📝'};
-    if(p.state==='failed')return {phase:'planning',state:'failed',text:'Planejamento interrompido',kind:'error',icon:'⚠️'};
+  if(p){
+    if(p.failedRoles?.includes(role))return {phase:'planning',state:'failed',text:'Planejamento interrompido',kind:'error',icon:'⚠️'};
+    const next=nextPlanningStages(p).some(s=>s[0]===role);
+    if(p.state==='running'&&(p.runningRoles?p.runningRoles.includes(role):next))return {phase:'planning',state:'working',text:'Planejamento em execução',kind:'plan',icon:'📝'};
+    if(p.state==='failed'&&!p.failedRoles&&next)return {phase:'planning',state:'failed',text:'Planejamento interrompido',kind:'error',icon:'⚠️'};
   }
   return {phase:'planning',state:'pending',text:p?'Aguardando sua etapa':'Disponível para novo projeto',kind:'wait',icon:'☕'};
 }

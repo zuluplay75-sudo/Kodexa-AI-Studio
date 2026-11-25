@@ -13,6 +13,10 @@ describe('managed office',()=>{
    expect(studioRoster(info({...p,state:'running'}),1000).filter(a=>a.status==='working').map(a=>a.managed?.role)).toEqual(['scout']);
    expect(studioRoster(info({...p,state:'approval'}),1000).find(a=>a.managed?.role==='scout')?.status).toBe('waiting');
  });
+ it('shows every genuinely running independent role',()=>{
+   const project:StudioProject={...p,state:'running',stages:STAGES.slice(0,2).map(s=>({role:s[0],text:'plan',sources:[],at:p.createdAt})),runningRoles:['academy','design','network']};
+   expect(studioRoster(info(project),1000).filter(a=>a.status==='working').map(a=>a.managed?.role)).toEqual(['academy','design','network']);
+ });
  it('shows actual delivery progress, not fake tests',()=>{
    const project:StudioProject={...p,state:'complete',stages:STAGES.map(s=>({role:s[0],text:'plan',sources:[],at:p.createdAt})),delivery:{state:'running',workspace:'/test',steps:[{role:'dev',report:'report',at:p.createdAt}]}};
    expect(studioRoster(info(project),1000).filter(a=>a.status==='working').map(a=>a.managed?.role)).toEqual(['qa']);

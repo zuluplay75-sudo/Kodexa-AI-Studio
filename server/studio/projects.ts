@@ -5,7 +5,8 @@ import { configuredCliPlanner, configuredExecutor, projectWorkspace, type CliPla
 import { DELIVERY_ROLES } from '../../shared/studio-project';
 import { knowledgeFor } from '../academy/study';
 import { workspaceZip } from './archive';
-import { STAGES, type StudioInfo, type StudioProject, type ProjectStage } from '../../shared/studio-project';
+import { STAGES, nextPlanningStages, type StudioInfo, type StudioProject, type ProjectStage } from '../../shared/studio-project';
+import { readPreview } from './preview';
 
 export class ProjectError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
@@ -41,7 +42,7 @@ export class ProjectStudio {
     }
     let changed = false;
     for (const p of this.projects) if (p.state === 'running') {
-      p.state = 'failed'; p.error = 'Execução interrompida. Você pode tentar novamente.'; changed = true;
+      p.state = 'failed'; p.error = 'Execução interrompida. Você pode tentar novamente.'; p.failedRoles=p.runningRoles??nextPlanningStages(p).map(s=>s[0]);delete p.runningRoles;changed = true;
     }
     for(const p of this.projects)if(p.delivery?.state==='running'){p.delivery.state='failed';p.delivery.error='Execução interrompida. Revise os arquivos antes de retomar.';changed=true;}
     if (changed) this.save();
@@ -83,43 +84,55 @@ export class ProjectStudio {
     try { this.save(); } catch(e) { delete p.decision; p.state='approval'; throw e; }
     return structuredClone(p);
   }
-  private checkNext(id:string) {
+  private checkNext(id:string,parallel=false) {
     const p = this.find(id);
     if (this.active || !['new','ready','failed'].includes(p.state)) throw new ProjectError(409,'Etapa indisponível; aguarde ou aprove a pesquisa.');
-    const stage = STAGES[p.stages.length];
+    const stages=nextPlanningStages(p,parallel),stage=stages[0];
     if (!stage || (p.stages.length > 0 && !p.decision)) throw new ProjectError(409,'Não há etapa liberada.');
     if (!this.options.run && !this.info().configured) throw new ProjectError(409,'Configure o provedor de planejamento no servidor (API ou Codex CLI dedicado).');
     if (p.research && stage[0] === 'scout' && !this.options.run && !this.info().webResearch) throw new ProjectError(409,'Pesquisa web indisponível neste provedor.');
-    return {p,stage};
+    return {p,stages};
   }
   launch(id:string, all=false):StudioProject {
     const {p}=this.checkNext(id);
     if(all && !p.decision) throw new ProjectError(409,'Aprove o Scout antes de executar a equipe.');
     const run=async()=>{
-      await this.next(id);
-      while(all && p.state==='ready') await this.next(id);
+      await this.runWave(id,all);
+      while(all && p.state==='ready') await this.runWave(id,true);
     };
     // The job is executed by the running server; never block the HTTP proxy for model latency.
     void run().catch(()=>{if(p.state==='running'){p.state='failed';p.error='Execução interrompida.';try{this.save();}catch{/* storage unavailable */}}});
     return structuredClone(p);
   }
-  async next(id:string):Promise<StudioProject> {
-    const {p,stage}=this.checkNext(id);
-    this.active = true;
-    const before = p.state;
-    p.state = 'running'; delete p.error;
-    try { this.save(); } catch(e) {p.state=before;this.active=false;throw e;}
-    try {
-      const result = await (this.options.run ?? ((project,s)=>this.call(project,s)))(structuredClone(p),stage);
-      if (!result.text.trim()) throw new Error('Empty result');
-      const out:ProjectStage = {role:stage[0],text:result.text.slice(0,20000),sources:result.sources.slice(0,30),at:new Date().toISOString()};
-      p.stages.push(out);
-      p.state = stage[0] === 'scout' ? 'approval' : p.stages.length === STAGES.length ? 'complete' : 'ready';
-      try { this.save(); } catch(e) {p.stages.pop(); throw e;}
-    } catch {
-      p.state = 'failed'; p.error = 'A etapa não foi concluída. Verifique a configuração, saldo e disponibilidade do provedor.';
+  async next(id:string):Promise<StudioProject>{return this.runWave(id,false);}
+  private async runWave(id:string,parallel:boolean):Promise<StudioProject>{
+    const {p,stages}=this.checkNext(id,parallel);
+    const before=p.state,priorError=p.error,priorFailed=p.failedRoles;
+    this.active=true;p.state='running';delete p.error;
+    p.runningRoles=stages.map(s=>s[0]);delete p.failedRoles;
+    try{this.save();}catch(e){p.state=before;p.error=priorError;p.failedRoles=priorFailed;delete p.runningRoles;this.active=false;throw e;}
+    const context=structuredClone(p);
+    try{
+      await Promise.all(stages.map(async stage=>{
+        try{
+          const result=await (this.options.run??((project,s)=>this.call(project,s)))(structuredClone(context),stage);
+          if(!result.text.trim())throw Error('Empty result');
+          const out:ProjectStage={role:stage[0],text:result.text.slice(0,20000),sources:result.sources.slice(0,30),at:new Date().toISOString()};
+          p.stages.push(out);
+          p.stages.sort((a,b)=>STAGES.findIndex(s=>s[0]===a.role)-STAGES.findIndex(s=>s[0]===b.role));
+          p.runningRoles=p.runningRoles!.filter(r=>r!==stage[0]);
+          try{this.save();}catch(e){p.stages=p.stages.filter(s=>s!==out);throw e;}
+        }catch{
+          p.runningRoles=p.runningRoles!.filter(r=>r!==stage[0]);
+          (p.failedRoles??=[]).push(stage[0]);
+          try{this.save();}catch{/* final write retries persistence */}
+        }
+      }));
+      delete p.runningRoles;
+      if(p.failedRoles?.length){p.state='failed';p.error='Uma ou mais etapas falharam. Resultados concluídos foram preservados; execute a equipe restante para retomar.';}
+      else{delete p.failedRoles;p.state=stages[0][0]==='scout'?'approval':p.stages.length===STAGES.length?'complete':'ready';}
       this.save();
-    } finally { this.active = false; }
+    }finally{this.active=false;}
     return structuredClone(p);
   }
   deliver(id:string, approved:unknown):StudioProject{
@@ -134,6 +147,12 @@ export class ProjectStudio {
     try{this.save();}catch(e){p.delivery=previous;this.active=false;throw e;}
     void this.runDelivery(p);
     return structuredClone(p);
+  }
+  preview(id:string){
+    const p=this.find(id);
+    if(!p.delivery||p.delivery.state!=='review')throw new ProjectError(409,'Conclua a construção antes de visualizar.');
+    try{return {...readPreview(projectWorkspace(join(this.options.dir,'workspaces'),p.id)),portLinkAvailable:true};}
+    catch{throw new ProjectError(409,'Não foi possível montar a prévia HTML deste projeto. Use o endereço privado do servidor do aplicativo.');}
   }
   archive(id:string):Buffer{
     const p=this.find(id);

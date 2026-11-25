@@ -9,9 +9,19 @@ export const STAGES = [
   ['shield', 'Kodexa Shield', 'Faça revisão de riscos do plano, ameaças, isolamento, permissões, segredos e verificações de segurança. Não afirme que o código foi auditado.'],
 ] as const;
 export type StudioRole = typeof STAGES[number][0];
+// Waves describe dependencies, not fictional activity. Only approved independent read-only work overlaps.
+export const PLAN_WAVES:readonly (readonly StudioRole[])[]=[['scout'],['manager'],['academy','design','network'],['dev'],['qa','shield']];
+export function nextPlanningStages(p:Pick<StudioProject,'stages'>,parallel=false):Array<typeof STAGES[number]>{
+  const completed=new Set(p.stages.map(s=>s.role));
+  const wave=PLAN_WAVES.find(w=>w.some(r=>!completed.has(r)));
+  if(!wave)return [];
+  const roles=wave.filter(r=>!completed.has(r));
+  return STAGES.filter(s=>roles.includes(s[0])).slice(0,parallel?roles.length:1);
+}
+export type StudioPreview={html:string;entry:string;portLinkAvailable:boolean};
 export type ProjectStage = { role: StudioRole; text: string; sources: string[]; at: string };
 export const DELIVERY_ROLES = ['dev','qa','shield'] as const;
 export type DeliveryRole = typeof DELIVERY_ROLES[number];
 export type DeliveryRun = { state:'running'|'failed'|'review'; steps:{role:DeliveryRole; report:string; at:string}[]; error?:string; workspace:string };
-export type StudioProject = { id: string; brief: string; research: boolean; decision?: string; stages: ProjectStage[]; state: 'new'|'running'|'approval'|'ready'|'complete'|'failed'; error?: string; createdAt: string; delivery?:DeliveryRun };
+export type StudioProject = { id: string; brief: string; research: boolean; decision?: string; stages: ProjectStage[]; state: 'new'|'running'|'approval'|'ready'|'complete'|'failed'; error?: string; createdAt: string; delivery?:DeliveryRun; runningRoles?:StudioRole[]; failedRoles?:StudioRole[] };
 export type StudioInfo = { configured: boolean; webResearch: boolean; executionAvailable?:boolean; provider: string; projects: StudioProject[] };

@@ -30,6 +30,29 @@ describe('project studio',()=>{
     expect(s.launch(p.id,true).state).toBe('running');
     await vi.waitFor(()=>expect(s.info().projects[0].state).toBe('complete'));
   });
+  it('executes independent roles in parallel, preserves successful siblings and retries only missing work',async()=>{
+    const releases=new Map<string,()=>void>();const calls:string[]=[];let fail=true;
+    const studio=new ProjectStudio({dir:dir(),env:{},run:async(_p,s)=>{
+      const role=s[0];calls.push(role);
+      if(['academy','design','network'].includes(role)&&fail){
+        await new Promise<void>(resolve=>releases.set(role,resolve));
+        if(role==='design')throw Error('temporary failure');
+      }
+      return {text:role,sources:[]};
+    }});
+    const p=studio.create({brief:'Criar aplicativo de oficina',research:false});
+    await studio.next(p.id);studio.approve(p.id,'Aplicativo de oficina');studio.launch(p.id,true);
+    await vi.waitFor(()=>expect(releases.size).toBe(3));
+    expect(studio.info().projects[0].runningRoles).toEqual(['academy','design','network']);
+    expect(calls).not.toContain('dev');
+    releases.get('network')!();releases.get('design')!();releases.get('academy')!();
+    await vi.waitFor(()=>expect(studio.info().projects[0].state).toBe('failed'));
+    expect(studio.info().projects[0].stages.map(s=>s.role)).toEqual(['scout','manager','academy','network']);
+    fail=false;studio.launch(p.id,true);
+    await vi.waitFor(()=>expect(studio.info().projects[0].state).toBe('complete'));
+    expect(calls.filter(r=>r==='academy')).toHaveLength(1);expect(calls.filter(r=>r==='network')).toHaveLength(1);expect(calls.filter(r=>r==='design')).toHaveLength(2);
+    expect(studio.info().projects[0].stages.map(s=>s.role)).toEqual(STAGES.map(s=>s[0]));
+  });
   it('accepts a configured CLI planning runner without API credentials and does not claim web research',async()=>{
     const planner=vi.fn(async(_workspace:string,_prompt:string)=>'Plano CLI');
     const s=new ProjectStudio({dir:dir(),env:{KODEXA_STUDIO_PROVIDER:'codex-cli'},planner});

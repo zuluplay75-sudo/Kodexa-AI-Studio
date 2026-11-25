@@ -1,6 +1,7 @@
-import { STAGES, type StudioInfo, type StudioProject } from '../../../shared/studio-project';
+import { STAGES, nextPlanningStages, type StudioInfo, type StudioProject } from '../../../shared/studio-project';
 import './projects.css';
 import { openAcademy } from './academy';
+import { openProjectPreview } from './preview';
 function el<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string):HTMLElementTagNameMap[K]{
   const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;
 }
@@ -19,11 +20,11 @@ export function mountProjects(){
   let poll:ReturnType<typeof setInterval>|undefined;
   launch.addEventListener('click',()=>{if(!poll)poll=setInterval(()=>{if(!busy && info?.projects.some(p=>p.state==='running'||p.delivery?.state==='running'))void refresh();},2500);});
   dialog.addEventListener('close',()=>{if(poll)clearInterval(poll);poll=undefined;});
-  let selected='',busy=false,info:StudioInfo|undefined;
+  let selected='',busy=false,info:StudioInfo|undefined,selectionInitialized=false;
   const heading=el('h2','Projetos Kodexa'),content=el('div'),status=el('p');status.setAttribute('role','status');
   const close=btn('Fechar',()=>dialog.close());dialog.append(heading,close,btn('Academy — aprender',openAcademy),status,content);
   async function refresh(){
-    try{info=await api<StudioInfo>('/api/studio');status.textContent='';render();}
+    try{info=await api<StudioInfo>('/api/studio');if(!selectionInitialized){selected=info.projects.find(p=>p.state==='running'||p.delivery?.state==='running')?.id??info.projects[0]?.id??'';selectionInitialized=true;}status.textContent='';render();}
     catch(e){status.textContent=(e as Error).message;}
   }
   async function action(fn:()=>Promise<unknown>){
@@ -47,6 +48,7 @@ export function mountProjects(){
       content.append(brief,label,create);return;
     }
     content.append(el('h3',p.brief),el('p','Etapas de planejamento concluídas: '+p.stages.length+' de '+STAGES.length));
+    if(p.runningRoles?.length)content.append(el('p','Trabalhando agora: '+p.runningRoles.map(r=>STAGES.find(s=>s[0]===r)?.[1]??r).join(' · ')));
     for(const s of p.stages){
       const details=el('details');details.open=s===p.stages.at(-1);details.append(el('summary',STAGES.find(x=>x[0]===s.role)?.[1]??s.role),el('pre',s.text));
       for(const url of s.sources){const a=el('a',url);a.href=url;a.target='_blank';a.rel='noopener noreferrer';details.append(a);}
@@ -58,8 +60,8 @@ export function mountProjects(){
       const decision=el('textarea');decision.placeholder='Escolha uma opção do Scout ou descreva sua decisão.';decision.maxLength=4000;
       const approve=btn('Aprovar e liberar Manager',()=>void action(()=>api(base+'/approve',{decision:decision.value})));approve.disabled=busy;content.append(decision,approve);
     }else if(['new','ready','failed'].includes(p.state)){
-      const next=btn('Executar '+(STAGES[p.stages.length]?.[1]??'etapa'),()=>void action(()=>api(base+'/next',{})));next.disabled=busy||!info.configured||info.projects.some(x=>x.state==='running'||x.delivery?.state==='running');content.append(next);
-      if(p.decision){const remaining=STAGES.length-p.stages.length;const all=btn('Executar equipe restante ('+remaining+' chamadas de IA)',()=>{if(confirm('Autoriza '+remaining+' chamadas ao provedor de IA, sujeitas à cobrança da sua conta?'))void action(()=>api(base+'/next',{all:true}));});all.disabled=next.disabled;content.append(all);}
+      const next=btn('Executar '+(nextPlanningStages(p)[0]?.[1]??'etapa'),()=>void action(()=>api(base+'/next',{})));next.disabled=busy||!info.configured||info.projects.some(x=>x.state==='running'||x.delivery?.state==='running');content.append(next);
+      if(p.decision){const remaining=STAGES.length-p.stages.length;const all=btn('Executar equipe restante em paralelo ('+remaining+' chamadas)',()=>{if(confirm('Autoriza '+remaining+' chamadas ao provedor de IA, sujeitas à cobrança da sua conta?'))void action(()=>api(base+'/next',{all:true}));});all.disabled=next.disabled;content.append(all);}
     }else if(p.state==='running'){const update=btn('Atualizar estado',()=>void refresh());update.disabled=busy;content.append(update);}
     else if(p.state==='complete'){
       content.append(el('p','Planejamento concluído. A execução de código exige autorização separada.'));
@@ -69,6 +71,7 @@ export function mountProjects(){
         if(p.delivery.error)content.append(el('p',p.delivery.error));
         if(p.delivery.state==='review')content.append(el('p','Sessões concluídas. Revise os arquivos e os relatórios antes de publicar. O término da sessão não comprova que todos os testes passaram.'));
         if(p.delivery.state==='running'){content.append(el('p','Equipe executando o projeto no servidor.'));return;}
+        if(p.delivery.state==='review')content.append(btn('Visualizar aplicativo',()=>openProjectPreview(p)));
         const zip=el('a','Baixar ZIP dos arquivos gerados');zip.href=base+'/archive';zip.download='kodexa-'+p.id+'.zip';content.append(zip,el('p','Exportação de até 20 MB/2000 arquivos. Revise o conteúdo antes de compartilhar.'));
       }
       if(p.delivery?.state!=='review'){

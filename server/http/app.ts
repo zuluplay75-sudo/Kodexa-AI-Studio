@@ -360,6 +360,12 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
         catch(err){if(err instanceof ProjectError)sendJson(res,err.status,{error:err.message});else fail(res,err);}
         return true;
       }
+      const preview=/^\/api\/studio\/projects\/([a-f0-9-]+)\/preview$/.exec(path);
+      if(preview&&method==='GET'){
+        if(!trusted(req,'spawn')){sendJson(res,403,{error:'Prévia não autorizada.'});return true;}
+        try{sendJson(res,200,studio.preview(preview[1]));}catch(err){if(err instanceof ProjectError)sendJson(res,err.status,{error:err.message});else fail(res,err);}
+        return true;
+      }
       if (method !== 'POST') {methodNotAllowed(res,'POST');return true;}
       void (async()=>{
         const body = await readJson(req);
