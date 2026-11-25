@@ -5,6 +5,7 @@
 import http from 'node:http';
 import { startAcademy } from './academy/bootstrap';
 import { ProjectStudio } from './studio/projects';
+import { AcademyStudy } from './academy/study';
 import { applyKodexaEnv } from './branding-env';
 import { join } from 'node:path';
 import { codexDirsRefused, isDefaultDir } from './accounts/detect';
@@ -355,12 +356,17 @@ const ticker = setInterval(() => {
 }, 250);
 
 let studio: ProjectStudio | undefined;
+let academyStudy:AcademyStudy|undefined;
 if (!config.demo && config.host === '127.0.0.1') {
-  try { studio = new ProjectStudio({dir:join(config.dataDir,'studio')}); }
+  try { studio = new ProjectStudio({dir:join(config.dataDir,'studio'),academyDir:join(config.dataDir,'academy')}); }
   catch { log.warn('Kodexa Studio: armazenamento indisponível.'); }
+}
+if(!config.demo&&config.host==='127.0.0.1'){
+  try{academyStudy=new AcademyStudy({dir:join(config.dataDir,'academy')});}catch{log.warn('Kodexa Academy: painel de estudo indisponível.');}
 }
 const api = createApiHandler({
   studio,
+  academyStudy,
   renameRoom: (id, name) => {
     const path = office.roomPath(id);
     if (!path) return undefined;

@@ -9,3 +9,10 @@
 #kodexa-projects a{color:#83d5ff}
 #kodexa-projects details{border:1px solid #59637f;padding:10px;margin:8px 0;border-radius:8px}
 #kodexa-projects pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}
+
+.kodexa-study-dialog{width:min(720px,calc(100% - 24px));max-height:calc(100dvh - 24px);overflow:auto;padding:20px;border:1px solid #6674a3;border-radius:14px;background:#171d30;color:#edf2ff;font:15px/1.5 system-ui;color-scheme:dark}
+.kodexa-study-dialog::backdrop{background:#080b16cc}
+.kodexa-study-dialog input,.kodexa-study-dialog select,.kodexa-study-dialog textarea,.kodexa-study-dialog button{box-sizing:border-box;display:block;max-width:100%;margin:8px 0;padding:10px;border:1px solid #7886a5;border-radius:8px;background:#232e46;color:white;font:inherit}
+.kodexa-study-dialog input,.kodexa-study-dialog select,.kodexa-study-dialog textarea{width:100%}
+.kodexa-study-dialog pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}
+.kodexa-study-dialog a{display:block;color:#83d5ff;overflow-wrap:anywhere}

@@ -1,5 +1,6 @@
 import { STAGES, type StudioInfo, type StudioProject } from '../../../shared/studio-project';
 import './projects.css';
+import { openAcademy } from './academy';
 function el<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string):HTMLElementTagNameMap[K]{
   const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;
 }
@@ -20,7 +21,7 @@ export function mountProjects(){
   dialog.addEventListener('close',()=>{if(poll)clearInterval(poll);poll=undefined;});
   let selected='',busy=false,info:StudioInfo|undefined;
   const heading=el('h2','Projetos Kodexa'),content=el('div'),status=el('p');status.setAttribute('role','status');
-  const close=btn('Fechar',()=>dialog.close());dialog.append(heading,close,status,content);
+  const close=btn('Fechar',()=>dialog.close());dialog.append(heading,close,btn('Academy — aprender',openAcademy),status,content);
   async function refresh(){
     try{info=await api<StudioInfo>('/api/studio');status.textContent='';render();}
     catch(e){status.textContent=(e as Error).message;}

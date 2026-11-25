@@ -24,9 +24,11 @@ import type { FileFetcher } from '../deliveries/fetcher';
 import { HOST_WAIT_MS } from '../host-wait';
 
 import { ProjectError, type ProjectStudio } from '../studio/projects';
+import { StudyError, type AcademyStudy } from '../academy/study';
 
 export interface ApiDeps {
   studio?: ProjectStudio;
+  academyStudy?:AcademyStudy;
   office: Office;
   hub: Hub;
   accounts: AccountsService;
@@ -339,6 +341,14 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     if (path === '/api/studio' || path.startsWith('/api/studio/')) {
       if (!trusted(req, 'messages') || (!isRemote(req) && !isLoopbackAddress(req.socket.remoteAddress))) {
         req.resume(); sendJson(res,403,{error:'Acesso ao estúdio não autorizado.'}); return true;
+      }
+      if(path==='/api/studio/academy'||path==='/api/studio/academy/study'){
+        const academy=deps.academyStudy;
+        if(!academy){req.resume();sendJson(res,503,{error:'Academy indisponível.'});return true;}
+        if(path==='/api/studio/academy'&&method==='GET'){sendJson(res,200,academy.info());return true;}
+        if(path!=='/api/studio/academy/study'||method!=='POST'){methodNotAllowed(res,path.endsWith('/study')?'POST':'GET');return true;}
+        void readJson(req,12*1024*1024).then(body=>sendJson(res,202,academy.launch(body))).catch(err=>{if(err instanceof StudyError)sendJson(res,err.status,{error:err.message});else fail(res,err);});
+        return true;
       }
       const studio = deps.studio;
       if (!studio) {req.resume();sendJson(res,503,{error:'Estúdio indisponível.'});return true;}
