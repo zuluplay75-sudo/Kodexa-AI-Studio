@@ -3,6 +3,7 @@
 //   npm run dev    -> tsx server/index.ts --dev (Vite em middleware mode, HMR no mesmo servidor)
 //   npm start      -> node dist/server/index.js (serve dist/client)
 import http from 'node:http';
+import { startAcademy } from './academy/bootstrap';
 import { join } from 'node:path';
 import { codexDirsRefused, isDefaultDir } from './accounts/detect';
 import { AccountsService } from './accounts/service';
@@ -61,6 +62,7 @@ import { WorldViewer } from './world/viewer';
 
 const config = loadConfig();
 const startedAt = Date.now();
+// Academy: seed local curriculum after legacy migration below, with external learning opt-in.
 
 // Nome antigo (CodeTown, até a 0.3.2): leva ~/.codetown para ~/.habblaud antes de ler qualquer estado e avisa
 // das variáveis CODETOWN_* que não valem mais. No Docker, quem migra é o docker:up.
@@ -71,6 +73,8 @@ if (!config.inDocker) {
 }
 const legacyEnv = legacyEnvWarning(Object.keys(process.env));
 if (legacyEnv) log.warn(legacyEnv);
+
+if (!config.demo) startAcademy({ dir: join(config.dataDir, 'academy') }, () => log.warn('Kodexa Academy: falha no processamento local; verifique o armazenamento.'));
 
 const names = new NameStore(join(config.dataDir, 'names.json'));
 names.load();
