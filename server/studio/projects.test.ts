@@ -19,6 +19,17 @@ describe('project studio',()=>{
     expect(run.mock.calls.map(x=>x[1][0])).toEqual(STAGES.map(x=>x[0]));
     expect(new ProjectStudio({dir:d,env:{}}).info().projects[0]).toMatchObject({state:'complete',decision:'Aplicativo de orçamento'});
   });
+  it('launches a background batch only after approval and rejects simultaneous jobs',async()=>{
+    const s=new ProjectStudio({dir:dir(),env:{},run:async(_p,stage)=>({text:stage[0],sources:[]})});
+    const p=s.create({brief:'Criar aplicativo de oficina',research:false});
+    expect(()=>s.launch(p.id,true)).toThrow();
+    expect(s.launch(p.id).state).toBe('running');
+    expect(()=>s.launch(p.id)).toThrow();
+    await vi.waitFor(()=>expect(s.info().projects[0].state).toBe('approval'));
+    s.approve(p.id,'Aplicativo de oficina');
+    expect(s.launch(p.id,true).state).toBe('running');
+    await vi.waitFor(()=>expect(s.info().projects[0].state).toBe('complete'));
+  });
   it('does not invent execution when provider unavailable or fails',async()=>{
     const s=new ProjectStudio({dir:dir(),env:{}});
     const p=s.create({brief:'Criar aplicativo de oficina',research:false});

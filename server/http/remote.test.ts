@@ -26,6 +26,7 @@ import {
 import { Hub } from './sse';
 import { hashPassword, parsePasswordHash } from '../remote/password';
 import { SpawnService } from '../spawn/spawn';
+import { ProjectStudio } from '../studio/projects';
 
 setQuiet(true);
 
@@ -215,6 +216,7 @@ async function start(allow: RemoteFeature[] = ['permissions'], secure = false): 
   const worldCalls: string[] = [];
   const spawn = new SpawnService();
   const api = createApiHandler({
+    studio:new ProjectStudio({dir:join(tmp.dir,'studio'),env:{},run:async()=>({text:'Pesquisa de teste',sources:[]})}),
     office,
     hub,
     accounts,
@@ -319,6 +321,19 @@ async function login(base: string): Promise<string> {
 }
 
 describe('porta remota', () => {
+  it('Kodexa projects require login and explicit messages permission',async()=>{
+    const h=await start(['permissions']);
+    expect((await request(h.remoteBase,'/api/studio')).status).toBe(401);
+    const cookie=await login(h.remoteBase);
+    expect((await request(h.remoteBase,'/api/studio',{headers:{Cookie:cookie,Host:'localhost'}})).status).toBe(403);
+    const t=await start(['messages']);
+    const c=await login(t.remoteBase),headers={Cookie:c};
+    const p=await request(t.remoteBase,'/api/studio/projects',{method:'POST',body:{brief:'Criar um aplicativo',research:false},headers});
+    expect(p.status).toBe(201);
+    const id=JSON.parse(p.body).id;
+    expect((await request(t.remoteBase,'/api/studio/projects/'+id+'/next',{method:'POST',body:{},headers})).status).toBe(202);
+    expect((await request(t.localBase,'/api/studio',{headers:{Host:'192.168.1.2'}})).status).toBe(403);
+  });
   it('protects the mobile workspace and issues a Secure cookie behind HTTPS proxy', async () => {
     const s = await start(['permissions'], true);
     expect((await request(s.remoteBase, '/')).status).toBe(302);

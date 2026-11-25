@@ -73,13 +73,28 @@ export class ProjectStudio {
     try { this.save(); } catch(e) { delete p.decision; p.state='approval'; throw e; }
     return structuredClone(p);
   }
-  async next(id:string):Promise<StudioProject> {
+  private checkNext(id:string) {
     const p = this.find(id);
     if (this.active || !['new','ready','failed'].includes(p.state)) throw new ProjectError(409,'Etapa indisponível; aguarde ou aprove a pesquisa.');
     const stage = STAGES[p.stages.length];
     if (!stage || (p.stages.length > 0 && !p.decision)) throw new ProjectError(409,'Não há etapa liberada.');
     if (!this.options.run && !this.info().configured) throw new ProjectError(409,'Configure KODEXA_STUDIO_MODEL e a chave do provedor no servidor.');
     if (p.research && stage[0] === 'scout' && !this.options.run && !this.info().webResearch) throw new ProjectError(409,'Pesquisa web indisponível neste provedor.');
+    return {p,stage};
+  }
+  launch(id:string, all=false):StudioProject {
+    const {p}=this.checkNext(id);
+    if(all && !p.decision) throw new ProjectError(409,'Aprove o Scout antes de executar a equipe.');
+    const run=async()=>{
+      await this.next(id);
+      while(all && p.state==='ready') await this.next(id);
+    };
+    // The job is executed by the running server; never block the HTTP proxy for model latency.
+    void run().catch(()=>{if(p.state==='running'){p.state='failed';p.error='Execução interrompida.';try{this.save();}catch{/* storage unavailable */}}});
+    return structuredClone(p);
+  }
+  async next(id:string):Promise<StudioProject> {
+    const {p,stage}=this.checkNext(id);
     this.active = true;
     const before = p.state;
     p.state = 'running'; delete p.error;

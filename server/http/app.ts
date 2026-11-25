@@ -349,8 +349,8 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
         if(path === '/api/studio/projects') return sendJson(res,201,studio.create(body));
         const match = /^\/api\/studio\/projects\/([a-f0-9-]+)\/(next|approve)$/.exec(path);
         if (!match) return sendJson(res,404,{error:'Rota desconhecida.'});
-        const p = match[2] === 'next' ? await studio.next(match[1]) : studio.approve(match[1],(body as {decision?:unknown}|null)?.decision);
-        sendJson(res,200,p);
+        const p = match[2] === 'next' ? studio.launch(match[1],(body as {all?:unknown}|null)?.all===true) : studio.approve(match[1],(body as {decision?:unknown}|null)?.decision);
+        sendJson(res,match[2] === 'next' ? 202 : 200,p);
       })().catch(err=>{if(err instanceof ProjectError) sendJson(res,err.status,{error:err.message});else fail(res,err);});
       return true;
     }

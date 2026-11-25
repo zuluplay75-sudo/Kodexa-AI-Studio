@@ -15,6 +15,9 @@ export function mountProjects(){
   const dialog=el('dialog');dialog.id='kodexa-projects';dialog.setAttribute('aria-label','Projetos Kodexa');
   const launch=btn('Projetos IA',()=>{dialog.showModal();void refresh();});launch.id='kodexa-projects-launch';
   document.body.append(launch,dialog);
+  let poll:ReturnType<typeof setInterval>|undefined;
+  launch.addEventListener('click',()=>{if(!poll)poll=setInterval(()=>{if(!busy && info?.projects.some(p=>p.state==='running'))void refresh();},2500);});
+  dialog.addEventListener('close',()=>{if(poll)clearInterval(poll);poll=undefined;});
   let selected='',busy=false,info:StudioInfo|undefined;
   const heading=el('h2','Projetos Kodexa'),content=el('div'),status=el('p');status.setAttribute('role','status');
   const close=btn('Fechar',()=>dialog.close());dialog.append(heading,close,status,content);
@@ -54,7 +57,8 @@ export function mountProjects(){
       const decision=el('textarea');decision.placeholder='Escolha uma opção do Scout ou descreva sua decisão.';decision.maxLength=4000;
       const approve=btn('Aprovar e liberar Manager',()=>void action(()=>api(base+'/approve',{decision:decision.value})));approve.disabled=busy;content.append(decision,approve);
     }else if(['new','ready','failed'].includes(p.state)){
-      const next=btn('Executar '+(STAGES[p.stages.length]?.[1]??'etapa'),()=>void action(()=>api(base+'/next',{})));next.disabled=busy||!info.configured;content.append(next);
+      const next=btn('Executar '+(STAGES[p.stages.length]?.[1]??'etapa'),()=>void action(()=>api(base+'/next',{})));next.disabled=busy||!info.configured||info.projects.some(x=>x.state==='running');content.append(next);
+      if(p.decision){const remaining=STAGES.length-p.stages.length;const all=btn('Executar equipe restante ('+remaining+' chamadas de IA)',()=>{if(confirm('Autoriza '+remaining+' chamadas ao provedor de IA, sujeitas à cobrança da sua conta?'))void action(()=>api(base+'/next',{all:true}));});all.disabled=next.disabled;content.append(all);}
     }else if(p.state==='running'){const update=btn('Atualizar estado',()=>void refresh());update.disabled=busy;content.append(update);}
     else if(p.state==='complete'){
       content.append(el('p','Planejamento concluído. A implementação e testes de código ainda precisam de uma sessão real.'));
