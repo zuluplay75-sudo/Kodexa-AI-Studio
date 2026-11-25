@@ -10,5 +10,8 @@ export const STAGES = [
 ] as const;
 export type StudioRole = typeof STAGES[number][0];
 export type ProjectStage = { role: StudioRole; text: string; sources: string[]; at: string };
-export type StudioProject = { id: string; brief: string; research: boolean; decision?: string; stages: ProjectStage[]; state: 'new'|'running'|'approval'|'ready'|'complete'|'failed'; error?: string; createdAt: string };
-export type StudioInfo = { configured: boolean; webResearch: boolean; provider: string; projects: StudioProject[] };
+export const DELIVERY_ROLES = ['dev','qa','shield'] as const;
+export type DeliveryRole = typeof DELIVERY_ROLES[number];
+export type DeliveryRun = { state:'running'|'failed'|'review'; steps:{role:DeliveryRole; report:string; at:string}[]; error?:string; workspace:string };
+export type StudioProject = { id: string; brief: string; research: boolean; decision?: string; stages: ProjectStage[]; state: 'new'|'running'|'approval'|'ready'|'complete'|'failed'; error?: string; createdAt: string; delivery?:DeliveryRun };
+export type StudioInfo = { configured: boolean; webResearch: boolean; executionAvailable?:boolean; provider: string; projects: StudioProject[] };

@@ -1,13 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { configuredExecutor, projectWorkspace, type ExecutionRunner } from './execution';
+import { DELIVERY_ROLES } from '../../shared/studio-project';
 import { STAGES, type StudioInfo, type StudioProject, type ProjectStage } from '../../shared/studio-project';
 
 export class ProjectError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
 type Run = (project: StudioProject, stage: typeof STAGES[number]) => Promise<{text:string; sources:string[]}>;
-type Options = { dir: string; env?: NodeJS.ProcessEnv; fetcher?: typeof fetch; run?: Run };
+type Options = { dir: string; env?: NodeJS.ProcessEnv; fetcher?: typeof fetch; run?: Run; execute?:ExecutionRunner };
 function config(env: NodeJS.ProcessEnv) {
   const provider = env.KODEXA_STUDIO_PROVIDER || env.KODEXA_ACADEMY_PROVIDER || 'openai';
   const model = env.KODEXA_STUDIO_MODEL || env.KODEXA_ACADEMY_MODEL || '';
@@ -17,10 +19,12 @@ function config(env: NodeJS.ProcessEnv) {
 export class ProjectStudio {
   private projects: StudioProject[];
   private active = false;
+  private readonly execute?:ExecutionRunner;
   private readonly env: NodeJS.ProcessEnv;
   private readonly file: string;
   constructor(private readonly options: Options) {
     this.env = options.env ?? process.env;
+    this.execute=options.execute??configuredExecutor(this.env);
     mkdirSync(options.dir, { recursive: true, mode: 0o700 });
     this.file = join(options.dir, 'projects.json');
     try {
@@ -35,6 +39,7 @@ export class ProjectStudio {
     for (const p of this.projects) if (p.state === 'running') {
       p.state = 'failed'; p.error = 'Execução interrompida. Você pode tentar novamente.'; changed = true;
     }
+    for(const p of this.projects)if(p.delivery?.state==='running'){p.delivery.state='failed';p.delivery.error='Execução interrompida. Revise os arquivos antes de retomar.';changed=true;}
     if (changed) this.save();
   }
   private save() {
@@ -46,7 +51,7 @@ export class ProjectStudio {
   }
   info(): StudioInfo {
     const c = config(this.env);
-    return { configured: c.configured, provider: c.provider, webResearch: c.configured && c.provider === 'openai', projects: structuredClone(this.projects) };
+    return { configured: c.configured, provider: c.provider, executionAvailable:!!this.execute, webResearch: c.configured && c.provider === 'openai', projects: structuredClone(this.projects) };
   }
   create(raw: unknown): StudioProject {
     const body = raw as {brief?:unknown;research?:unknown} | null;
@@ -111,6 +116,36 @@ export class ProjectStudio {
       this.save();
     } finally { this.active = false; }
     return structuredClone(p);
+  }
+  deliver(id:string, approved:unknown):StudioProject{
+    const p=this.find(id);
+    if(approved!==true)throw new ProjectError(400,'Autorize expressamente a execução de código.');
+    if(!this.execute)throw new ProjectError(409,'Executor Codex não configurado no servidor.');
+    if(this.active||p.state!=='complete'||p.delivery?.state==='review'||p.delivery?.state==='running')throw new ProjectError(409,'Execução indisponível neste estado.');
+    const workspace=projectWorkspace(join(this.options.dir,'workspaces'),id);
+    const previous=p.delivery;
+    p.delivery={state:'running',workspace,steps:previous?.steps??[]};
+    this.active=true;
+    try{this.save();}catch(e){p.delivery=previous;this.active=false;throw e;}
+    void this.runDelivery(p);
+    return structuredClone(p);
+  }
+  private async runDelivery(p:StudioProject){
+    const delivery=p.delivery!;
+    try{
+      for(const role of DELIVERY_ROLES.slice(delivery.steps.length)){
+        const workspace=projectWorkspace(join(this.options.dir,'workspaces'),p.id);
+        const report=await this.execute!({workspace,role,project:structuredClone(p)});
+        if(!report.trim())throw Error('Empty report');
+        delivery.steps.push({role,report:report.slice(0,20000),at:new Date().toISOString()});
+        try{this.save();}catch(e){delivery.steps.pop();throw e;}
+      }
+      delivery.state='review';
+      this.save();
+    }catch{
+      delivery.state='failed';delivery.error='Uma etapa não terminou. Verifique o login Codex, sandbox, limites e os arquivos parciais. A retomada pode gerar novas cobranças.';
+      try{this.save();}catch{/* retain failure in memory */}
+    }finally{this.active=false;}
   }
   private async call(p: StudioProject, stage: typeof STAGES[number]) {
     const c=config(this.env);

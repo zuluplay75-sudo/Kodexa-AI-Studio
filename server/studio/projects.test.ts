@@ -30,6 +30,21 @@ describe('project studio',()=>{
     expect(s.launch(p.id,true).state).toBe('running');
     await vi.waitFor(()=>expect(s.info().projects[0].state).toBe('complete'));
   });
+  it('requires a completed plan and explicit execution approval, then runs three real-runner jobs in one workspace',async()=>{
+    const d=dir(),execute=vi.fn(async(job:import('./execution').ExecutionJob)=>job.role+' report');
+    const s=new ProjectStudio({dir:d,env:{},run:async(_p,stage)=>({text:stage[0],sources:[]}),execute});
+    const p=s.create({brief:'Criar aplicativo de oficina',research:false});
+    expect(()=>s.deliver(p.id,true)).toThrow();
+    await s.next(p.id);s.approve(p.id,'Aplicativo de oficina');
+    for(let i=1;i<STAGES.length;i++)await s.next(p.id);
+    expect(()=>s.deliver(p.id,false)).toThrow();
+    expect(s.deliver(p.id,true).delivery?.state).toBe('running');
+    expect(()=>s.deliver(p.id,true)).toThrow();
+    await vi.waitFor(()=>expect(s.info().projects[0].delivery?.state).toBe('review'));
+    expect(execute.mock.calls.map(c=>c[0].role)).toEqual(['dev','qa','shield']);
+    expect(new Set(execute.mock.calls.map(c=>c[0].workspace)).size).toBe(1);
+    expect(new ProjectStudio({dir:d,env:{}}).info().projects[0].delivery?.steps).toHaveLength(3);
+  });
   it('does not invent execution when provider unavailable or fails',async()=>{
     const s=new ProjectStudio({dir:dir(),env:{}});
     const p=s.create({brief:'Criar aplicativo de oficina',research:false});

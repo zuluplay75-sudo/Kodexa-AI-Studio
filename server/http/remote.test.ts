@@ -332,6 +332,7 @@ describe('porta remota', () => {
     expect(p.status).toBe(201);
     const id=JSON.parse(p.body).id;
     expect((await request(t.remoteBase,'/api/studio/projects/'+id+'/next',{method:'POST',body:{},headers})).status).toBe(202);
+    expect((await request(t.remoteBase,'/api/studio/projects/'+id+'/deliver',{method:'POST',body:{approved:true},headers})).status).toBe(403);
     expect((await request(t.localBase,'/api/studio',{headers:{Host:'192.168.1.2'}})).status).toBe(403);
   });
   it('protects the mobile workspace and issues a Secure cookie behind HTTPS proxy', async () => {

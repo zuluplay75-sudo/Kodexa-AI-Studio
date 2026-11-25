@@ -71,6 +71,7 @@ async function start() {
     HABBLAUD_REMOTE_PASSWORD_HASH: owner.hash, HABBLAUD_REMOTE_PASSWORD: '',
     HABBLAUD_REMOTE_ALLOW: 'permissions,messages,spawn', HABBLAUD_REMOTE_INSECURE_HTTP: '0',
     HABBLAUD_ALLOWED_HOSTS: host, HABBLAUD_WORLD: '0', HABBLAUD_DEMO: '0',
+    HABBLAUD_DATA_DIR: process.env.KODEXA_DATA_DIR?.trim() || (process.env.HABBLAUD_DATA_DIR?.trim() && process.env.HABBLAUD_DATA_DIR.trim() !== '/data' ? process.env.HABBLAUD_DATA_DIR.trim() : join(homedir(), '.habblaud')),
     HABBLAUD_TERMINAL: '1', HABBLAUD_MENSAGENS: '1', HABBLAUD_PTY: '1',
   };
   console.log('Encaminhe somente a porta 4748 como Private, protocolo HTTP interno. Não encaminhe 4747.');

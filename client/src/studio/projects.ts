@@ -16,7 +16,7 @@ export function mountProjects(){
   const launch=btn('Projetos IA',()=>{dialog.showModal();void refresh();});launch.id='kodexa-projects-launch';
   document.body.append(launch,dialog);
   let poll:ReturnType<typeof setInterval>|undefined;
-  launch.addEventListener('click',()=>{if(!poll)poll=setInterval(()=>{if(!busy && info?.projects.some(p=>p.state==='running'))void refresh();},2500);});
+  launch.addEventListener('click',()=>{if(!poll)poll=setInterval(()=>{if(!busy && info?.projects.some(p=>p.state==='running'||p.delivery?.state==='running'))void refresh();},2500);});
   dialog.addEventListener('close',()=>{if(poll)clearInterval(poll);poll=undefined;});
   let selected='',busy=false,info:StudioInfo|undefined;
   const heading=el('h2','Projetos Kodexa'),content=el('div'),status=el('p');status.setAttribute('role','status');
@@ -57,11 +57,26 @@ export function mountProjects(){
       const decision=el('textarea');decision.placeholder='Escolha uma opção do Scout ou descreva sua decisão.';decision.maxLength=4000;
       const approve=btn('Aprovar e liberar Manager',()=>void action(()=>api(base+'/approve',{decision:decision.value})));approve.disabled=busy;content.append(decision,approve);
     }else if(['new','ready','failed'].includes(p.state)){
-      const next=btn('Executar '+(STAGES[p.stages.length]?.[1]??'etapa'),()=>void action(()=>api(base+'/next',{})));next.disabled=busy||!info.configured||info.projects.some(x=>x.state==='running');content.append(next);
+      const next=btn('Executar '+(STAGES[p.stages.length]?.[1]??'etapa'),()=>void action(()=>api(base+'/next',{})));next.disabled=busy||!info.configured||info.projects.some(x=>x.state==='running'||x.delivery?.state==='running');content.append(next);
       if(p.decision){const remaining=STAGES.length-p.stages.length;const all=btn('Executar equipe restante ('+remaining+' chamadas de IA)',()=>{if(confirm('Autoriza '+remaining+' chamadas ao provedor de IA, sujeitas à cobrança da sua conta?'))void action(()=>api(base+'/next',{all:true}));});all.disabled=next.disabled;content.append(all);}
     }else if(p.state==='running'){const update=btn('Atualizar estado',()=>void refresh());update.disabled=busy;content.append(update);}
     else if(p.state==='complete'){
-      content.append(el('p','Planejamento concluído. A implementação e testes de código ainda precisam de uma sessão real.'));
+      content.append(el('p','Planejamento concluído. A execução de código exige autorização separada.'));
+      if(p.delivery){
+        content.append(el('p','Arquivos do projeto: '+p.delivery.workspace));
+        for(const step of p.delivery.steps){const d=el('details');d.append(el('summary',step.role+' — relatório da sessão'),el('pre',step.report));content.append(d);}
+        if(p.delivery.error)content.append(el('p',p.delivery.error));
+        if(p.delivery.state==='review')content.append(el('p','Sessões concluídas. Revise os arquivos e os relatórios antes de publicar. O término da sessão não comprova que todos os testes passaram.'));
+        if(p.delivery.state==='running'){content.append(el('p','Equipe executando o projeto no servidor.'));return;}
+      }
+      if(p.delivery?.state!=='review'){
+        const execute=btn(p.delivery?'Retomar execução Codex':'Construir projeto com Codex',()=>{
+          if(confirm('Autoriza sessões reais de programação, testes e revisão em uma pasta nova gerenciada pelo Kodexa? Isso usa a cota do Codex.'))void action(()=>api(base+'/deliver',{approved:true}));
+        });
+        execute.disabled=busy||!info.executionAvailable||info.projects.some(x=>x.state==='running'||x.delivery?.state==='running');
+        content.append(execute);
+        if(!info.executionAvailable)content.append(el('p','Executor Codex desabilitado. Configure uma conta dedicada e KODEXA_EXEC_ENABLED no servidor.'));
+      }
       const folder=el('input');folder.placeholder='/workspaces/meu-projeto';folder.setAttribute('aria-label','Pasta absoluta do projeto');
       const handoff=btn('Iniciar sessão Claude Code',()=>void action(async()=>{
         const prompt=('Implemente o projeto conforme a decisão aprovada: '+p.decision+'\n'+p.stages.filter(s=>['manager','dev','qa','shield'].includes(s.role)).map(s=>s.role+': '+s.text.slice(0,1300)).join('\n')).slice(0,8000);
