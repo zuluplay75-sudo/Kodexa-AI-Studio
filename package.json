@@ -1,14 +1,14 @@
 {
-  "name": "habblaud",
+  "name": "kodexa-ai-studio",
   "version": "1.0.3",
   "private": true,
-  "description": "Escritório virtual animado que mostra, em tempo real, o que seus agentes do Claude Code estão fazendo.",
+  "description": "Kodexa AI Studio — escritório virtual para agentes Claude Code e Codex.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/marmottajr/habblaud.git"
+    "url": "git+https://github.com/zuluplay75-sudo/Kodexa-AI-Studio.git"
   },
-  "homepage": "https://github.com/marmottajr/habblaud#readme",
+  "homepage": "https://github.com/zuluplay75-sudo/Kodexa-AI-Studio#readme",
   "type": "module",
   "engines": {
     "node": ">=22.12"
@@ -45,7 +45,8 @@
     "codex:bridge": "tsx scripts/codex-bridge.ts",
     "remote:setup": "tsx scripts/remote-setup.ts",
     "remote:mdns": "tsx scripts/remote-mdns.ts",
-    "release": "tsx scripts/release.ts"
+    "release": "tsx scripts/release.ts",
+    "start:real": "HABBLAUD_DEMO=0 KODEXA_DEMO=0 npm start"
   },
   "devDependencies": {
     "@fontsource/pixelify-sans": "^5.3.0",
