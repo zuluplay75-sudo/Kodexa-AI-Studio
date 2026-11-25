@@ -19,3 +19,5 @@ O login protege a interface e a API remota; a porta local permanece para as inte
 Para alterar a senha, pare o servidor, execute npm run login:setup novamente e reinicie. A mudança invalida sessões antigas. O arquivo fica no Codespace, que não é hospedagem permanente; se o ambiente for excluído, será preciso recriar a configuração. Não há recuperação por e-mail nesta etapa.
 
 Não integrar à main até compilar, executar os testes e validar login, logout, acesso negado sem cookie e sessão real em Codespaces.
+
+Para planejamento sem chave de API separada, consulte a opção codex-cli em kodexa-projects.md. O login do aplicativo e a autenticação da ferramenta de IA são independentes. Não envie chaves ou senhas pelo chat. Os testes de fumaça em CI validam o servidor compilado com credenciais de teste, não o proxy ou as contas reais do proprietário.

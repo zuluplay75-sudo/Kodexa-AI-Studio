@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { mkdirSync, lstatSync, realpathSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { findCodexBin } from '../messages/codex';
 import type { DeliveryRole, StudioProject } from '../../shared/studio-project';
 
@@ -35,10 +35,30 @@ export function executionEnvironment(env:NodeJS.ProcessEnv):NodeJS.ProcessEnv{
   if(env.KODEXA_EXEC_CODEX_HOME)safe.CODEX_HOME=resolve(env.KODEXA_EXEC_CODEX_HOME);
   return safe;
 }
+export type CliPlanner=(workspace:string,prompt:string)=>Promise<string>;
+function dedicatedBin(env:NodeJS.ProcessEnv){
+  if(!env.KODEXA_EXEC_CODEX_HOME||!isAbsolute(env.KODEXA_EXEC_CODEX_HOME)||process.platform!=='linux')return undefined;
+  return findCodexBin(env);
+}
+export function planningArgs(prompt:string):string[]{
+  return ['-a','never','-c','sandbox_workspace_write.network_access=false','exec','--sandbox','read-only','--skip-git-repo-check','--',prompt];
+}
+export function configuredCliPlanner(env:NodeJS.ProcessEnv):CliPlanner|undefined{
+  if(env.KODEXA_STUDIO_PROVIDER!=='codex-cli')return undefined;
+  const bin=dedicatedBin(env);
+  if(!bin)return undefined;
+  return (workspace,prompt)=>new Promise((ok,fail)=>{
+    const child=execFile(bin,planningArgs(prompt),{cwd:workspace,env:executionEnvironment(env),timeout:5*60*1000,killSignal:'SIGKILL',maxBuffer:1024*1024,encoding:'utf8',windowsHide:true},(err,out)=>{
+      if(err||!out.trim())return fail(Error('Codex planning did not finish successfully'));
+      ok(out.trim().slice(0,20000));
+    });
+    child.stdin?.end();
+  });
+}
 export function configuredExecutor(env:NodeJS.ProcessEnv):ExecutionRunner|undefined{
   // Explicit owner opt-in. Never silently fall back to an unrestricted runner.
-  if(env.KODEXA_EXEC_ENABLED!=='1'||!env.KODEXA_EXEC_CODEX_HOME||process.platform!=='linux')return undefined;
-  const bin=findCodexBin(env);
+  if(env.KODEXA_EXEC_ENABLED!=='1')return undefined;
+  const bin=dedicatedBin(env);
   if(!bin)return undefined;
   return job=>new Promise((ok,fail)=>{
     const child=execFile(bin,executionArgs(job),{cwd:job.workspace,env:executionEnvironment(env),timeout:15*60*1000,killSignal:'SIGKILL',maxBuffer:1024*1024,encoding:'utf8',windowsHide:true},(err,out)=>{

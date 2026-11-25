@@ -11,3 +11,6 @@ O botão Construir projeto com Codex cria uma pasta gerenciada em dataDir/studio
 
 ### Exportação de projetos
 Após concluir ou interromper as sessões, Baixar ZIP exporta somente arquivos regulares do diretório gerenciado (20 MB/2000 arquivos), excluindo links, caches, .git e caminhos de credenciais conhecidos. Isso não é um scanner de segredos; revise arquivos e relatórios antes de distribuir. Nenhum código é publicado automaticamente.
+
+### Planejamento por Codex CLI
+Alternativamente a uma chave API, configure KODEXA_STUDIO_PROVIDER=codex-cli e KODEXA_EXEC_CODEX_HOME com uma pasta absoluta privada de uma conta Codex dedicada autenticada. O planejamento usa a CLI com sandbox read-only, sem pesquisa web; cada cargo recebe a decisão e os resultados anteriores. A conta precisa estar apta a usar a CLI. KODEXA_EXEC_ENABLED=1 habilita separadamente a geração de código, nas condições descritas acima. A pesquisa web pelo Scout e o estudo multimídia permanecem recursos de API, com respectivas credenciais e limites.

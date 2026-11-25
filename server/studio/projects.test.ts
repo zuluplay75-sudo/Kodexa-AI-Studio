@@ -30,6 +30,15 @@ describe('project studio',()=>{
     expect(s.launch(p.id,true).state).toBe('running');
     await vi.waitFor(()=>expect(s.info().projects[0].state).toBe('complete'));
   });
+  it('accepts a configured CLI planning runner without API credentials and does not claim web research',async()=>{
+    const planner=vi.fn(async(_workspace:string,_prompt:string)=>'Plano CLI');
+    const s=new ProjectStudio({dir:dir(),env:{KODEXA_STUDIO_PROVIDER:'codex-cli'},planner});
+    expect(s.info()).toMatchObject({configured:true,webResearch:false,provider:'codex-cli'});
+    expect(()=>s.create({brief:'Criar aplicativo de oficina',research:true})).toThrow();
+    const p=s.create({brief:'Criar aplicativo de oficina',research:false});
+    expect((await s.next(p.id)).state).toBe('approval');
+    expect(planner).toHaveBeenCalledWith(expect.stringContaining(p.id),expect.stringContaining('Kodexa Scout'));
+  });
   it('requires a completed plan and explicit execution approval, then runs three real-runner jobs in one workspace',async()=>{
     const d=dir(),execute=vi.fn(async(job:import('./execution').ExecutionJob)=>job.role+' report');
     const s=new ProjectStudio({dir:d,env:{},run:async(_p,stage)=>({text:stage[0],sources:[]}),execute});
