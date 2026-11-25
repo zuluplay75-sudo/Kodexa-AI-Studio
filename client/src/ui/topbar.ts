@@ -57,7 +57,7 @@ export class TopBar implements UiComponent {
   constructor(private ctx: UiContext) {
     // Marca: usa o logo do projeto se existir; senão, o prédio em pixels.
     const mark = h('span', { class: 'ui-brand__mark' });
-    const logo = h('img', { attrs: { src: '/assets/brand/logo-mark.png', srcset: '/assets/brand/logo-mark@4x.png 4x', alt: '', width: 32, height: 32, draggable: 'false' } });
+    const logo = h('img', { attrs: { src: '/assets/brand/kodexa-mark.svg', alt: '', width: 32, height: 32, draggable: 'false' } });
     logo.addEventListener('error', () => {
       mark.innerHTML = FALLBACK_MARK;
     });
