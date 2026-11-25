@@ -3,6 +3,7 @@ import { mkdirSync,readFileSync,writeFileSync,renameSync,rmSync } from 'node:fs'
 import { join } from 'node:path';
 import { CURRICULUM,studyTranscript,type AcademyState,type Role } from './bootstrap';
 import { MEDIA_LIMIT,type StudyInfo,type StudyJob } from '../../shared/academy-study';
+import { articleUrl,readPublicArticle } from './web-source';
 export class StudyError extends Error{constructor(readonly status:number,message:string){super(message)}}
 function state(dir:string):AcademyState|undefined{
   try{return JSON.parse(readFileSync(join(dir,'state.json'),'utf8')) as AcademyState;}
@@ -12,7 +13,7 @@ export function knowledgeFor(dir:string,role:Role){
   try{return (state(dir)?.notes??[]).filter(n=>n.role===role).slice(-4).map(n=>({source:n.source,text:n.text.slice(0,1500),validated:false}));}
   catch{return [];}
 }
-type Options={dir:string;env?:NodeJS.ProcessEnv;fetcher?:typeof fetch;study?:typeof studyTranscript};
+type Options={dir:string;env?:NodeJS.ProcessEnv;fetcher?:typeof fetch;study?:typeof studyTranscript;readArticle?:typeof readPublicArticle};
 const EXT=new Set(['mp3','mp4','mpeg','mpga','m4a','wav','webm']);
 export class AcademyStudy{
   private jobs:StudyJob[]=[];
@@ -41,13 +42,16 @@ export class AcademyStudy{
   launch(raw:unknown):StudyJob{
     if(!this.enabled())throw new StudyError(409,'Configure e habilite Academy no servidor.');
     if(this.jobs.some(j=>j.state==='running'))throw new StudyError(409,'Aguarde o estudo em andamento.');
-    const b=raw as {role?:unknown;source?:unknown;text?:unknown;media?:unknown;filename?:unknown;approved?:unknown}|null;
+    const b=raw as {role?:unknown;source?:unknown;text?:unknown;media?:unknown;filename?:unknown;approved?:unknown;link?:unknown}|null;
     const role=CURRICULUM.find(x=>x.id===b?.role)?.id;
-    const source=typeof b?.source==='string'?b.source.trim():'';
+    let source=typeof b?.source==='string'?b.source.trim():'';
+    const link=typeof b?.link==='string'?b.link.trim():'';
+    if(link){try{source=articleUrl(link).href;}catch{throw new StudyError(400,'Use um link HTTPS público de artigo. Links de vídeo exigem transcrição ou mídia autorizada.');}}
     if(!role||!source||source.length>500||b?.approved!==true)throw new StudyError(400,'Informe cargo, referência e autorize o envio ao provedor.');
     const text=typeof b.text==='string'?b.text.trim():'';
     const media=typeof b.media==='string'?b.media:'';
-    const kind=media?'media':'text';
+    const kind=media?'media':link?'link':'text';
+    if(link&&(text||media))throw new StudyError(400,'Envie um tipo de material por vez.');
     let bytes:Buffer|undefined,filename='';
     if(media){
       if(!this.env.OPENAI_API_KEY)throw new StudyError(409,'Transcrição de mídia requer OpenAI.');
@@ -58,7 +62,7 @@ export class AcademyStudy{
       filename='source.'+ext;
       const today=new Date().toISOString().slice(0,10);
       if(this.jobs.filter(j=>j.kind==='media'&&j.at.startsWith(today)).length>=4)throw new StudyError(429,'Limite diário de quatro transcrições.');
-    }else if(text.length<100||text.length>16000)throw new StudyError(400,'Use 100–16000 caracteres por trecho de texto ou transcrição.');
+    }else if(!link&&(text.length<100||text.length>16000))throw new StudyError(400,'Use 100–16000 caracteres por trecho de texto ou transcrição.');
     const j:StudyJob={id:randomUUID(),role,source,kind,state:'running',at:new Date().toISOString()};
     const before=this.jobs;
     this.jobs=[...this.jobs.slice(-99),j];
@@ -68,6 +72,7 @@ export class AcademyStudy{
   }
   private async run(j:StudyJob,text:string,bytes?:Buffer,filename=''){
     try{
+      if(j.kind==='link')text=await (this.o.readArticle??readPublicArticle)(j.source);
       if(bytes){
         const form=new FormData();
         form.append('file',new Blob([new Uint8Array(bytes)]),filename);

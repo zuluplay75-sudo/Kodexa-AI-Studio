@@ -20,6 +20,16 @@ describe('Academy manual study',()=>{
     expect(fetcher).toHaveBeenCalledWith('https://api.openai.com/v1/audio/transcriptions',expect.objectContaining({method:'POST'}));
     expect(study).toHaveBeenCalledWith(expect.anything(),'dev','Vídeo próprio','transcrição '.repeat(20).trim());
   });
+  it('reads a public article link before producing notes, rejects mixed inputs',async()=>{
+    const study=vi.fn(async()=>note),readArticle=vi.fn(async()=> 'artigo '.repeat(20));
+    const s=new AcademyStudy({dir:dir(),env,study,readArticle});
+    expect(()=>s.launch({role:'dev',link:'https://127.0.0.1/',approved:true})).toThrow();
+    expect(()=>s.launch({role:'dev',link:'https://docs.godotengine.org/',text:'mixed',approved:true})).toThrow();
+    s.launch({role:'dev',link:'https://docs.godotengine.org/',approved:true});
+    await vi.waitFor(()=>expect(s.info().jobs[0].state).toBe('done'));
+    expect(readArticle).toHaveBeenCalledWith('https://docs.godotengine.org/');
+    expect(study).toHaveBeenCalledWith(expect.anything(),'dev','https://docs.godotengine.org/','artigo '.repeat(20));
+  });
   it('passes only bounded notes for the requested role, as unvalidated',()=>{
     const d=dir();writeFileSync(join(d,'state.json'),JSON.stringify({notes:[note,{...note,role:'qa',text:'Other'}]}));
     expect(knowledgeFor(d,'dev')).toEqual([{source:'Manual',text:'Nota de teste',validated:false}]);
