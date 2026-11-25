@@ -27,6 +27,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { parsePasswordHash, verifyPassword, type PasswordHash } from '../remote/password';
 import { hostAllowed } from './guard';
+import { codespaceLoginHost } from './codespace-login';
 import { getLocale, tr } from '../../shared/i18n';
 
 export type RemoteFeature = 'permissions' | 'messages' | 'terminal' | 'spawn';
@@ -50,6 +51,8 @@ export interface RemoteConfig {
   allow: ReadonlySet<RemoteFeature>;
   /** Ausente = HTTP puro (só com HABBLAUD_REMOTE_INSECURE_HTTP=1). */
   tls?: RemoteTls;
+  /** Private Codespaces HTTPS proxy; upstream listens only on loopback. */
+  codespaceProxyHost?: string;
 }
 
 export const DEFAULT_REMOTE_PORT = 4748;
@@ -81,6 +84,11 @@ export function parseRemoteConfig(
   if (!user || !hashText) return { warning: tr('acesso remoto desligado: faltam HABBLAUD_REMOTE_USER e HABBLAUD_REMOTE_PASSWORD_HASH; rode npm run remote:setup') };
   const passwordHash = parsePasswordHash(hashText);
   if (!passwordHash) return { warning: tr('acesso remoto desligado: HABBLAUD_REMOTE_PASSWORD_HASH inválido; rode npm run remote:setup') };
+  if (truthy(env.HABBLAUD_CODESPACE_LOGIN)) {
+    const proxyHost = codespaceLoginHost(env);
+    if (!proxyHost || inDocker) return { warning: 'Kodexa: ambiente Codespaces privado inválido para login.' };
+    return { config: { port: DEFAULT_REMOTE_PORT, host: '127.0.0.1', user, passwordHash, passwordHashText: hashText, allow: parseAllow(env.HABBLAUD_REMOTE_ALLOW), codespaceProxyHost: proxyHost } };
+  }
   const dir = defaultTlsDir(env, inDocker);
   const tls: RemoteTls = { dir, keyFile: join(dir, 'server.key'), certFile: join(dir, 'server.crt'), caFile: join(dir, 'ca.crt') };
   const hasTls = exists(tls.keyFile) && exists(tls.certFile);
@@ -261,7 +269,7 @@ export class LoginThrottle {
 const remoteRequests = new WeakSet<IncomingMessage>();
 /** Arquivos que a porta remota serve sem login: manifesto e ícones (o celular os busca antes do login, sem o
  *  cookie). Nada da API nem do escritório. */
-const PUBLIC_STATIC = /^\/(manifest\.webmanifest|assets\/brand\/[\w.@-]+\.png)$/;
+const PUBLIC_STATIC = /^\/(manifest\.webmanifest|assets\/brand\/[\w.@-]+\.png|assets\/brand\/kodexa-(?:app|logo)\.svg)$/;
 
 export function isRemoteRequest(req: IncomingMessage): boolean {
   return remoteRequests.has(req);
@@ -340,8 +348,9 @@ export function loginPage(opts: { caDownload: boolean }): string {
 </head>
 <body>
 <form id="f" autocomplete="on">
+  <img src="/assets/brand/kodexa-logo.svg" alt="Kodexa AI Studio" width="240" height="96" style="display:block;max-width:100%;margin:0 auto 12px;object-fit:contain">
   <h1>Kodexa AI Studio</h1>
-  <p>${esc(tr('Acesso pelo celular. Entre com o usuário e a senha que você escolheu no npm run remote:setup.'))}</p>
+  <p>${esc(tr('Acesso pelo celular. Entre com o usuário e a senha que você escolheu no npm run remote:setup.').replace('npm run remote:setup', 'configurador de acesso'))}</p>
   <label for="u">${esc(tr('Usuário'))}</label>
   <input id="u" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
   <label for="p">${esc(tr('Senha'))}</label>
@@ -361,7 +370,7 @@ export function loginPage(opts: { caDownload: boolean }): string {
       if (r.ok) { location.replace('/'); return; }
       const body = await r.json().catch(() => ({}));
       err.textContent = body.error || ${js(tr('Não deu para entrar.'))};
-    } catch { err.textContent = ${js(tr('Sem conexão com o Habblaud.'))}; }
+    } catch { err.textContent = ${js(tr('Sem conexão com o Habblaud.').replace('Habblaud', 'Kodexa AI Studio'))}; }
     b.disabled = false;
   });
 </script>

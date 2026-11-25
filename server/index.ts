@@ -66,6 +66,12 @@ for (const [key, value] of Object.entries(applyKodexaEnv(process.env))) {
   if (key.startsWith('HABBLAUD_') && process.env[key] === undefined && value !== undefined) process.env[key] = value;
 }
 const config = loadConfig();
+if (isTruthy(process.env.HABBLAUD_CODESPACE_LOGIN) && (
+  !config.remote?.codespaceProxyHost || config.host !== '127.0.0.1' || config.port === config.remote.port || config.dev
+)) {
+  throw new Error('Kodexa: login Codespaces exige configuração válida, build de produção e porta local separada.');
+}
+if (config.remote?.codespaceProxyHost) config.allowedHosts.add(config.remote.codespaceProxyHost);
 const startedAt = Date.now();
 // Academy: seed local curriculum after legacy migration below, with external learning opt-in.
 
@@ -446,7 +452,7 @@ if (config.remote) {
   const gate = createRemoteGate({
     config: remote,
     sessions: new RemoteSessions(loadSecret(join(config.dataDir, 'remote-secret')), remote, Date.now, join(config.dataDir, 'remote-revoked.json')),
-    secure: !!remote.tls,
+    secure: !!remote.tls || !!remote.codespaceProxyHost,
     caFile: remote.tls?.caFile,
   });
   remoteListener = startRemoteListener(
@@ -469,7 +475,7 @@ if (config.remote) {
   remoteListener.server.once('listening', () => {
     const allow = [...remote.allow].join(', ') || tr('só ver');
     const where = config.inDocker ? tr('publicada pelo HABBLAUD_REMOTE_BIND') : remote.host;
-    const scheme = remote.tls ? 'HTTPS' : tr('HTTP SEM criptografia (HABBLAUD_REMOTE_INSECURE_HTTP)');
+    const scheme = remote.codespaceProxyHost ? 'HTTPS (proxy privado Codespaces)' : remote.tls ? 'HTTPS' : tr('HTTP SEM criptografia (HABBLAUD_REMOTE_INSECURE_HTTP)');
     log.info(tr('   Acesso remoto: ligado na porta {0} ({1}), {2}, com login; libera: {3}.', [remote.port, where, scheme, allow]));
     if (remote.allow.has('spawn') && !spawn) log.warn(tr('   Acesso remoto: "spawn" liberado, mas o Novo agente está desligado (ligue com HABBLAUD_PTY=1).'));
   });

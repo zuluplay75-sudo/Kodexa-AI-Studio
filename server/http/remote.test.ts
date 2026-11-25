@@ -72,6 +72,20 @@ describe('parseRemoteConfig', () => {
   });
 });
 
+describe('Kodexa Codespaces login', () => {
+  const env = { HABBLAUD_CODESPACE_LOGIN: '1', HABBLAUD_REMOTE_USER: 'ana', HABBLAUD_REMOTE_PASSWORD_HASH: HASH_TEXT, CODESPACES: 'true', CODESPACE_NAME: 'my-space', GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: 'app.github.dev' };
+  it('requires explicit private-proxy mode and binds the gated listener to loopback', () => {
+    const result = parseRemoteConfig(env, false, () => false);
+    expect(result.config).toMatchObject({ host: '127.0.0.1', port: 4748, codespaceProxyHost: 'my-space-4748.app.github.dev' });
+    expect(result.config?.tls).toBeUndefined();
+  });
+  it('rejects non-Codespaces, invalid proxy domain and Docker launch', () => {
+    expect(parseRemoteConfig({ ...env, CODESPACES: 'false' }, false).config).toBeUndefined();
+    expect(parseRemoteConfig({ ...env, GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: 'example.com' }, false).config).toBeUndefined();
+    expect(parseRemoteConfig(env, true).config).toBeUndefined();
+  });
+});
+
 describe('RemoteSessions', () => {
   it('aceita o próprio token e recusa adulterado, vencido ou de outra senha', () => {
     let now = 1_800_000_000_000;
