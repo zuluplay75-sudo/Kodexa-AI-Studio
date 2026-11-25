@@ -1,8 +1,10 @@
 <p align="center">
-  <img src="client/public/assets/brand/logo-mark@4x.png" width="96" alt="Logo do Habblaud: um pequeno prédio em pixel art" />
+  <img src="client/public/assets/brand/kodexa-app.svg" width="96" alt="Kodexa AI Studio" />
 </p>
 
-<h1 align="center">Habblaud</h1>
+<h1 align="center">Kodexa AI Studio</h1>
+
+> **Kodexa AI Studio** é uma versão independente derivada do Habblaud (MIT). As instruções originais abaixo documentam as integrações e os identificadores legados preservados por compatibilidade. Consulte [migração Kodexa e execução real](docs/kodexa-migration.md) para a configuração atual e limitações.
 
 <p align="center">
   <b>O escritório virtual dos seus agentes do Claude Code (e do Codex).</b><br />
