@@ -7,6 +7,7 @@ import { knowledgeFor } from '../academy/study';
 import { workspaceZip } from './archive';
 import { STAGES, nextPlanningStages, type StudioInfo, type StudioProject, type ProjectStage, type StudioRole } from '../../shared/studio-project';
 import { readPreview } from './preview';
+import {DemoRuntime} from './runtime';
 
 export class ProjectError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
@@ -26,8 +27,10 @@ export class ProjectStudio {
   private readonly planner?:CliPlanner;
   private readonly env: NodeJS.ProcessEnv;
   private readonly file: string;
+  private readonly runtime:DemoRuntime;
   constructor(private readonly options: Options) {
     this.env = options.env ?? process.env;
+    this.runtime=new DemoRuntime(join(options.dir,'runtime'),this.env);
     this.execute=options.execute??configuredExecutor(this.env);
     this.planner=options.planner??configuredCliPlanner(this.env);
     mkdirSync(options.dir, { recursive: true, mode: 0o700 });
@@ -155,6 +158,20 @@ export class ProjectStudio {
     void this.runDelivery(p);
     return structuredClone(p);
   }
+  private runtimeWorkspace(id:string){
+    const p=this.find(id);
+    if(p.delivery?.state!=='review')throw new ProjectError(409,'Conclua e revise a construção antes de iniciar.');
+    return projectWorkspace(join(this.options.dir,'workspaces'),p.id);
+  }
+  runtimeStatus(id:string){return this.runtime.status(id,this.runtimeWorkspace(id));}
+  async startRuntime(id:string,approved:unknown){
+    if(approved!==true)throw new ProjectError(400,'Autorize a demonstração expressamente.');
+    if(this.active)throw new ProjectError(409,'Aguarde a execução da equipe.');
+    const workspace=this.runtimeWorkspace(id);
+    try{return await this.runtime.start(id,workspace);}catch(err){throw new ProjectError(409,err instanceof Error&&err.message.startsWith('Porta 8010')?err.message:'Não foi possível iniciar a demonstração verificada. Confira a configuração, versão e porta 8010.');}
+  }
+  stopRuntime(id:string){this.runtimeWorkspace(id);this.runtime.stop(id);return this.runtimeStatus(id);}
+  shutdownRuntime(){this.runtime.shutdown();}
   preview(id:string){
     const p=this.find(id);
     if(!p.delivery||p.delivery.state!=='review')throw new ProjectError(409,'Conclua a construção antes de visualizar.');

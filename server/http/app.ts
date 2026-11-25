@@ -366,6 +366,18 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
         try{sendJson(res,200,studio.preview(preview[1]));}catch(err){if(err instanceof ProjectError)sendJson(res,err.status,{error:err.message});else fail(res,err);}
         return true;
       }
+      const runtime=/^\/api\/studio\/projects\/([a-f0-9-]+)\/runtime(?:\/(start|stop))?$/.exec(path);
+      if(runtime){
+        if(!trusted(req,'spawn')){req.resume();sendJson(res,403,{error:'Runtime não autorizado.'});return true;}
+        void (async()=>{
+          if(!runtime[2]&&method==='GET')return sendJson(res,200,studio.runtimeStatus(runtime[1]));
+          if(!runtime[2]||method!=='POST')return methodNotAllowed(res,runtime[2]?'POST':'GET');
+          const body=await readJson(req);
+          if(runtime[2]==='start')return sendJson(res,200,await studio.startRuntime(runtime[1],(body as {approved?:unknown}|null)?.approved));
+          return sendJson(res,200,studio.stopRuntime(runtime[1]));
+        })().catch(err=>{if(err instanceof ProjectError)sendJson(res,err.status,{error:err.message});else fail(res,err);});
+        return true;
+      }
       if (method !== 'POST') {methodNotAllowed(res,'POST');return true;}
       void (async()=>{
         const body = await readJson(req);

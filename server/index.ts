@@ -583,6 +583,7 @@ function shutdown(signal: string): void {
   shuttingDown = true;
   log.info(tr('Encerrando ({0})…', [signal]));
   clearInterval(ticker);
+  studio?.shutdownRuntime();
   stats.stop();
   agents.stop();
   accounts.stop();

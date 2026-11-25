@@ -1,4 +1,4 @@
-import type {StudioProject,StudioPreview} from '../../../shared/studio-project';
+import type {StudioProject,StudioPreview,StudioRuntime} from '../../../shared/studio-project';
 function node<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string):HTMLElementTagNameMap[K]{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;return el;}
 function button(label:string,fn:()=>void){const b=node('button',label);b.type='button';b.onclick=fn;return b;}
 export function privatePortUrl(origin:string,port:number):string|undefined{
@@ -27,9 +27,25 @@ export function openProjectPreview(p:StudioProject){
   const hint=node('p','Se a prévia ficar em Carregando, a interface provavelmente depende de uma API. Abra a versão completa pela porta privada abaixo, após iniciar o servidor conforme o README. A prévia HTML não executa o backend.');
   const updateLink=()=>{const url=privatePortUrl(location.origin,Number(port.value));if(url){link.href=url;link.hidden=false;}else{link.removeAttribute('href');link.hidden=true;}};
   port.oninput=updateLink;updateLink();
+  const runtimePanel=node('section');runtimePanel.setAttribute('aria-label','Servidor de demonstração');
+  const runtimeStatus=node('p','Verificando servidor…');runtimeStatus.setAttribute('role','status');
+  const start=button('Iniciar aplicativo',()=>{if(confirm('Iniciar uma cópia temporária da demonstração verificada, sem dados reais? Confirme que a porta 8010 permanecerá Privada.'))void runtimeAction('start');});
+  const stop=button('Parar aplicativo',()=>void runtimeAction('stop'));
+  const open=node('a','Abrir aplicativo online');open.target='_blank';open.rel='noopener noreferrer';open.hidden=true;
+  let runtimeBusy=false;
+  const runtimeBase='/api/studio/projects/'+encodeURIComponent(p.id)+'/runtime';
+  async function runtimeRequest(action?:'start'|'stop'){
+    const response=await fetch(runtimeBase+(action?'/'+action:''),{credentials:'same-origin',cache:'no-store',...(action?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({approved:true})}:{})});
+    const result=await response.json();if(!response.ok)throw Error(result.error??'Servidor indisponível.');return result as StudioRuntime;
+  }
+  function showRuntime(r:StudioRuntime){if(closed)return;runtimeStatus.textContent=r.message;start.disabled=runtimeBusy||!r.available||r.state!=='stopped';stop.disabled=runtimeBusy||!['starting','running'].includes(r.state);const url=r.state==='running'&&r.port?privatePortUrl(location.origin,r.port):undefined;if(url){open.href=url;open.hidden=false;}else{open.hidden=true;open.removeAttribute('href');}}
+  async function refreshRuntime(){if(closed||runtimeBusy)return;try{showRuntime(await runtimeRequest());}catch(e){if(!closed)runtimeStatus.textContent=(e as Error).message;}}
+  async function runtimeAction(action:'start'|'stop'){if(runtimeBusy)return;runtimeBusy=true;start.disabled=true;stop.disabled=true;runtimeStatus.textContent=action==='start'?'Iniciando servidor…':'Parando servidor…';try{const result=await runtimeRequest(action);runtimeBusy=false;showRuntime(result);}catch(e){runtimeBusy=false;if(!closed){runtimeStatus.textContent=(e as Error).message;start.disabled=false;}}}
+  start.disabled=true;stop.disabled=true;runtimePanel.append(node('h3','Servidor de demonstração'),runtimeStatus,start,stop,open,node('p','A execução usa somente a versão verificada do Oficina em Dia, uma cópia descartável e a porta privada 8010. A sessão é encerrada após uma hora. Outros backends ainda exigem o README.'));
+  const poll=setInterval(()=>void refreshRuntime(),2500);
   const close=button('Fechar prévia',()=>dialog.close());
-  dialog.append(title,close,node('p','Prévia HTML local sem iniciar processos no servidor. APIs, recursos externos e navegação superior não fazem parte da prévia.'),status,toggle,frame,hint,port,link);
-  dialog.addEventListener('close',()=>{closed=true;frame.srcdoc='';dialog.remove();},{once:true});
-  dialog.showModal();
+  dialog.append(title,close,runtimePanel,node('p','Prévia HTML local sem iniciar processos no servidor. APIs, recursos externos e navegação superior não fazem parte da prévia.'),status,toggle,frame,hint,port,link);
+  dialog.addEventListener('close',()=>{closed=true;clearInterval(poll);frame.srcdoc='';dialog.remove();},{once:true});
+  dialog.showModal();void refreshRuntime();
   void fetch('/api/studio/projects/'+encodeURIComponent(p.id)+'/preview',{credentials:'same-origin',cache:'no-store'}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error??'Prévia indisponível.');return d as StudioPreview;}).then(d=>{if(closed)return;data=d;toggle.disabled=false;render();}).catch(e=>{if(!closed)status.textContent=String(e.message??e);});
 }

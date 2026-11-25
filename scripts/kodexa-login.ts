@@ -73,6 +73,7 @@ async function start() {
     HABBLAUD_ALLOWED_HOSTS: host, HABBLAUD_WORLD: '0', HABBLAUD_DEMO: '0',
     HABBLAUD_DATA_DIR: process.env.KODEXA_DATA_DIR?.trim() || (process.env.HABBLAUD_DATA_DIR?.trim() && process.env.HABBLAUD_DATA_DIR.trim() !== '/data' ? process.env.HABBLAUD_DATA_DIR.trim() : join(homedir(), '.habblaud')),
     HABBLAUD_TERMINAL: '1', HABBLAUD_MENSAGENS: '1', HABBLAUD_PTY: '1',
+    KODEXA_RUNTIME_ENABLED: process.env.KODEXA_RUNTIME_ENABLED ?? '1',
   };
   console.log('Encaminhe somente a porta 4748 como Private, protocolo HTTP interno. Não encaminhe 4747.');
   console.log('Endereço HTTPS esperado: https://' + host);
