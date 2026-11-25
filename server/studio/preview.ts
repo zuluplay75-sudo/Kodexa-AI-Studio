@@ -1,13 +1,20 @@
-import {lstatSync,readFileSync,realpathSync} from 'node:fs';
-import {dirname,join,posix,relative,resolve,sep} from 'node:path';
+import {closeSync,constants,fstatSync,openSync,readSync,realpathSync} from 'node:fs';
+import {posix,relative,resolve,sep} from 'node:path';
 const MAX_FILE=512*1024,MAX_TOTAL=2*1024*1024;
 const ENTRIES=['index.html','static/index.html','public/index.html','dist/index.html','build/index.html'];
 function safeRead(root:string,path:string):Buffer{
   if(!path||path.split('/').some(x=>!x||x==='.'||x==='..'||x.startsWith('.'))||!/^[a-zA-Z0-9_./ -]+$/.test(path))throw Error('Invalid path');
   const full=resolve(root,path);
   if(!relative(root,full)||!full.startsWith(root+sep)||realpathSync(full)!==full)throw Error('Invalid workspace file');
-  const st=lstatSync(full);if(!st.isFile()||st.size>MAX_FILE)throw Error('Invalid preview file');
-  return readFileSync(full);
+  const fd=openSync(full,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+  try{
+    const st=fstatSync(fd);
+    if(!st.isFile()||st.nlink!==1||st.size>MAX_FILE)throw Error('Invalid preview file');
+    const buf=Buffer.alloc(st.size);
+    let offset=0;
+    while(offset<buf.length){const n=readSync(fd,buf,offset,buf.length-offset,offset);if(!n)break;offset+=n;}
+    return buf.subarray(0,offset);
+  }finally{closeSync(fd);}
 }
 function asset(root:string,entry:string,url:string,ext:string):Buffer|undefined{
   if(!url||url.includes('\\')||url.includes(':')||url.startsWith('//')||url.includes('%')||url.includes('?')||url.includes('#')||url.split('/').includes('..')||!url.toLowerCase().endsWith(ext))return undefined;

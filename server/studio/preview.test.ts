@@ -1,7 +1,7 @@
 import {describe,it,expect} from 'vitest';
 import {tempDir} from '../test/fixtures';
 import {join} from 'node:path';
-import {mkdirSync,writeFileSync,symlinkSync} from 'node:fs';
+import {mkdirSync,writeFileSync,symlinkSync,linkSync} from 'node:fs';
 import {readPreview} from './preview';
 describe('static preview',()=>{
  it('bundles only local bounded CSS and JS, supports static directory',()=>{
@@ -17,7 +17,8 @@ describe('static preview',()=>{
   const tmp=tempDir(),outside=tempDir();try{
    writeFileSync(join(outside.dir,'secret.js'),'PRIVATE_SECRET');
    symlinkSync(join(outside.dir,'secret.js'),join(tmp.dir,'alias.js'));
-   writeFileSync(join(tmp.dir,'index.html'),'<script src="alias.js"></script><script src="../secret.js"></script><script src="https://example.com/a.js"></script>');
+   linkSync(join(outside.dir,'secret.js'),join(tmp.dir,'hard.js'));
+   writeFileSync(join(tmp.dir,'index.html'),'<script src="alias.js"></script><script src="hard.js"></script><script src="../secret.js"></script><script src="https://example.com/a.js"></script>');
    const p=readPreview(tmp.dir);expect(p.html).not.toContain('data:text/javascript');expect(p.html).not.toContain('PRIVATE_SECRET');
   }finally{tmp.cleanup();outside.cleanup();}
  });

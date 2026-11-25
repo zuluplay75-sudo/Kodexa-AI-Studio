@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -52,6 +52,16 @@ describe('project studio',()=>{
     await vi.waitFor(()=>expect(studio.info().projects[0].state).toBe('complete'));
     expect(calls.filter(r=>r==='academy')).toHaveLength(1);expect(calls.filter(r=>r==='network')).toHaveLength(1);expect(calls.filter(r=>r==='design')).toHaveLength(2);
     expect(studio.info().projects[0].stages.map(s=>s.role)).toEqual(STAGES.map(s=>s[0]));
+  });
+  it('recovers the last persisted result after interruption and retains failed siblings',()=>{
+    const d=dir(),s=new ProjectStudio({dir:d,env:{}}),p=s.create({brief:'Criar aplicativo de oficina',research:false});
+    const persist=(roles:Array<typeof STAGES[number][0]>,extra:object)=>{
+      writeFileSync(join(d,'projects.json'),JSON.stringify({schema:1,projects:[{...p,state:'running',stages:STAGES.filter(x=>roles.includes(x[0])).map(x=>({role:x[0],text:'plan',sources:[],at:p.createdAt})),...extra}]}));
+      return new ProjectStudio({dir:d,env:{}}).info().projects[0];
+    };
+    expect(persist(['scout'],{runningRoles:[]})).toMatchObject({state:'approval'});
+    expect(persist(STAGES.map(s=>s[0]),{decision:'Approved',runningRoles:[]})).toMatchObject({state:'complete'});
+    expect(persist(['scout','manager','academy'],{decision:'Approved',runningRoles:['network'],failedRoles:['design']})).toMatchObject({state:'failed',failedRoles:['design','network']});
   });
   it('accepts a configured CLI planning runner without API credentials and does not claim web research',async()=>{
     const planner=vi.fn(async(_workspace:string,_prompt:string)=>'Plano CLI');

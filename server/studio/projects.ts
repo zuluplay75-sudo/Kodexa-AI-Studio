@@ -42,7 +42,14 @@ export class ProjectStudio {
     }
     let changed = false;
     for (const p of this.projects) if (p.state === 'running') {
-      p.state = 'failed'; p.error = 'Execução interrompida. Você pode tentar novamente.'; p.failedRoles=p.runningRoles??nextPlanningStages(p).map(s=>s[0]);delete p.runningRoles;changed = true;
+      const completed=new Set(p.stages.map(s=>s.role));
+      const interrupted=[...new Set([...(p.failedRoles??[]),...(p.runningRoles??nextPlanningStages(p).map(s=>s[0]))])].filter(r=>!completed.has(r));
+      delete p.runningRoles;delete p.failedRoles;delete p.error;
+      if(completed.size===STAGES.length)p.state='complete';
+      else if(completed.has('scout')&&!p.decision)p.state='approval';
+      else if(interrupted.length){p.state='failed';p.failedRoles=interrupted;p.error='Execução interrompida. Resultados salvos foram preservados; você pode retomar.';}
+      else p.state='ready';
+      changed = true;
     }
     for(const p of this.projects)if(p.delivery?.state==='running'){p.delivery.state='failed';p.delivery.error='Execução interrompida. Revise os arquivos antes de retomar.';changed=true;}
     if (changed) this.save();
