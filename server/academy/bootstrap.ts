@@ -131,7 +131,12 @@ export async function runAcademyOnce(options: Options): Promise<AcademyState> {
   budgetDay(state, day);
   const calls = limit(env.KODEXA_ACADEMY_DAILY_MODEL_CALLS, 4, 16);
   const searches = limit(env.KODEXA_ACADEMY_DAILY_VIDEO_SEARCHES, 2, 8);
-  for (const role of CURRICULUM) {
+  const byAttempt = (field: 'attemptedDay' | 'videoAttemptedDay') => [...CURRICULUM].sort((a,b) => {
+    const first = state.jobs.find(j => j.role === a.id)?.[field] ?? '';
+    const second = state.jobs.find(j => j.role === b.id)?.[field] ?? '';
+    return first.localeCompare(second);
+  });
+  for (const role of byAttempt('attemptedDay')) {
     const job = state.jobs.find(j => j.role === role.id)!;
     if (modelConfigured(env) && state.budget.modelCalls < calls && job.attemptedDay !== day && refreshDue(job.processedAt, now)) {
       state.budget.modelCalls++;
@@ -149,6 +154,9 @@ export async function runAcademyOnce(options: Options): Promise<AcademyState> {
       } catch { job.status = 'failed'; job.error = 'Fonte ou provedor indisponível; nenhuma nota nova criada.'; }
       await saveAcademy(options.dir, state);
     }
+  }
+  for (const role of byAttempt('videoAttemptedDay')) {
+    const job = state.jobs.find(j => j.role === role.id)!;
     if (env.YOUTUBE_API_KEY && state.budget.searches < searches && job.videoAttemptedDay !== day && refreshDue(job.videoCheckedAt, now)) {
       state.budget.searches++;
       job.videoAttemptedDay = day;
@@ -190,6 +198,7 @@ export function startAcademy(options: Options, warn: () => void): () => void {
     try { await runAcademyOnce(options); } catch { warn(); } finally { busy = false; }
   };
   void tick();
+  if ((options.env ?? process.env).KODEXA_ACADEMY_AUTO !== '1') return () => { stopped = true; };
   const timer = setInterval(() => { void tick(); }, 60 * 60 * 1000);
   timer.unref();
   return () => { stopped = true; clearInterval(timer); };
