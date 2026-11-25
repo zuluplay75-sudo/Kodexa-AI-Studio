@@ -23,7 +23,10 @@ import type { DeliveryIndex } from '../deliveries/deliveries';
 import type { FileFetcher } from '../deliveries/fetcher';
 import { HOST_WAIT_MS } from '../host-wait';
 
+import { ProjectError, type ProjectStudio } from '../studio/projects';
+
 export interface ApiDeps {
+  studio?: ProjectStudio;
   office: Office;
   hub: Hub;
   accounts: AccountsService;
@@ -333,6 +336,24 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     const method = req.method ?? 'GET';
     const isRead = method === 'GET' || method === 'HEAD';
 
+    if (path === '/api/studio' || path.startsWith('/api/studio/')) {
+      if (!trusted(req, 'messages') || (!isRemote(req) && !isLoopbackAddress(req.socket.remoteAddress))) {
+        req.resume(); sendJson(res,403,{error:'Acesso ao estúdio não autorizado.'}); return true;
+      }
+      const studio = deps.studio;
+      if (!studio) {req.resume();sendJson(res,503,{error:'Estúdio indisponível.'});return true;}
+      if (path === '/api/studio' && method === 'GET') {sendJson(res,200,studio.info());return true;}
+      if (method !== 'POST') {methodNotAllowed(res,'POST');return true;}
+      void (async()=>{
+        const body = await readJson(req);
+        if(path === '/api/studio/projects') return sendJson(res,201,studio.create(body));
+        const match = /^\/api\/studio\/projects\/([a-f0-9-]+)\/(next|approve)$/.exec(path);
+        if (!match) return sendJson(res,404,{error:'Rota desconhecida.'});
+        const p = match[2] === 'next' ? await studio.next(match[1]) : studio.approve(match[1],(body as {decision?:unknown}|null)?.decision);
+        sendJson(res,200,p);
+      })().catch(err=>{if(err instanceof ProjectError) sendJson(res,err.status,{error:err.message});else fail(res,err);});
+      return true;
+    }
     if (isRemote(req) && isLocalOnlyPath(path)) {
       req.resume();
       sendJson(res, 403, { error: tr('rota só do próprio computador (hooks, plugins e o auxiliar do host)') });

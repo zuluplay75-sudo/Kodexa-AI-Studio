@@ -4,6 +4,7 @@
 //   npm start      -> node dist/server/index.js (serve dist/client)
 import http from 'node:http';
 import { startAcademy } from './academy/bootstrap';
+import { ProjectStudio } from './studio/projects';
 import { applyKodexaEnv } from './branding-env';
 import { join } from 'node:path';
 import { codexDirsRefused, isDefaultDir } from './accounts/detect';
@@ -353,7 +354,13 @@ const ticker = setInterval(() => {
   }
 }, 250);
 
+let studio: ProjectStudio | undefined;
+if (!config.demo && config.host === '127.0.0.1') {
+  try { studio = new ProjectStudio({dir:join(config.dataDir,'studio')}); }
+  catch { log.warn('Kodexa Studio: armazenamento indisponível.'); }
+}
 const api = createApiHandler({
+  studio,
   renameRoom: (id, name) => {
     const path = office.roomPath(id);
     if (!path) return undefined;

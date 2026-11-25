@@ -17,5 +17,7 @@ void dictionary.then(() => import('./app')).then(async (app) => {
   if (!new URLSearchParams(location.search).has('mock')) {
     const { mountStudioSetup } = await import('./studio/onboarding');
     mountStudioSetup();
+    const { mountProjects } = await import('./studio/projects');
+    mountProjects();
   }
 });

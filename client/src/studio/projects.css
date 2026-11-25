@@ -1,0 +1,11 @@
+#kodexa-projects-launch{position:fixed;bottom:calc(64px + env(safe-area-inset-bottom));right:12px;z-index:100;border:1px solid #7886a5;border-radius:10px;background:#202942;color:white;padding:11px;font:600 14px system-ui;cursor:pointer}
+#kodexa-projects{width:min(720px,calc(100% - 24px));max-height:calc(100dvh - 24px);overflow:auto;padding:20px;border:1px solid #6674a3;border-radius:14px;background:#171d30;color:#edf2ff;font:15px/1.5 system-ui;color-scheme:dark}
+#kodexa-projects::backdrop{background:#080b16cc}
+#kodexa-projects button,#kodexa-projects select,#kodexa-projects textarea,#kodexa-projects input:not([type=checkbox]){box-sizing:border-box;margin:6px 0;padding:10px;border:1px solid #7886a5;border-radius:8px;background:#232e46;color:white;font:inherit}
+#kodexa-projects button{cursor:pointer;min-height:44px}
+#kodexa-projects button:disabled{opacity:.55}
+#kodexa-projects textarea,#kodexa-projects select,#kodexa-projects input:not([type=checkbox]){width:100%}
+#kodexa-projects label,#kodexa-projects a{display:block;overflow-wrap:anywhere}
+#kodexa-projects a{color:#83d5ff}
+#kodexa-projects details{border:1px solid #59637f;padding:10px;margin:8px 0;border-radius:8px}
+#kodexa-projects pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}
