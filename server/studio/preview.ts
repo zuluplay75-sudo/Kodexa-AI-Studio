@@ -18,8 +18,11 @@ function safeRead(root:string,path:string):Buffer{
 }
 function asset(root:string,entry:string,url:string,ext:string):Buffer|undefined{
   if(!url||url.includes('\\')||url.includes(':')||url.startsWith('//')||url.includes('%')||url.includes('?')||url.includes('#')||url.split('/').includes('..')||!url.toLowerCase().endsWith(ext))return undefined;
-  const name=url.startsWith('/')?url.slice(1):posix.join(posix.dirname(entry),url);
-  try{return safeRead(root,name);}catch{return undefined;}
+  // A backend often mounts static/ or public/ at the web root, not at /static/.
+  const name=url.startsWith('/')?url.slice(1):url;
+  const candidates=[posix.join(posix.dirname(entry),name),...(url.startsWith('/')?[name]:[])];
+  for(const candidate of new Set(candidates)){try{return safeRead(root,candidate);}catch{/* next bounded candidate */}}
+  return undefined;
 }
 export function readPreview(workspace:string):{html:string;entry:string}{
   const root=realpathSync(workspace);

@@ -23,3 +23,6 @@
 #kodexa-preview button{cursor:pointer;min-height:44px}
 #kodexa-preview a{color:#83d5ff;display:inline-block;margin:8px;overflow-wrap:anywhere}
 #kodexa-preview iframe{width:100%;height:55vh;background:white;border:1px solid #7886a5;border-radius:8px;box-sizing:border-box}
+
+#kodexa-preview a[href]{border:1px solid #7886a5;border-radius:8px;padding:10px 14px;background:#232e46;text-decoration:none;font-weight:600}
+#kodexa-preview a[hidden]{display:none}

@@ -23,8 +23,8 @@ export function openProjectPreview(p:StudioProject){
   function render(){if(!data||closed)return;frame.setAttribute('sandbox',scripts?'allow-scripts':'');frame.srcdoc=previewDocument(data.html,scripts);frame.hidden=false;status.textContent='Arquivo: '+data.entry+' · '+(scripts?'JavaScript local autorizado; API e recursos externos bloqueados.':'Visualização estática, sem JavaScript.');}
   const toggle=button('Ativar JavaScript local',()=>{if(!scripts&&!confirm('Execute apenas código revisado e confiável. A prévia fica em uma origem isolada e não deve receber dados reais. A sandbox não é uma máquina virtual. Continuar?'))return;scripts=!scripts;toggle.textContent=scripts?'Desativar JavaScript':'Ativar JavaScript local';render();});toggle.disabled=true;
   const port=node('input');port.type='number';port.min='1024';port.max='65535';port.value='8000';port.setAttribute('aria-label','Porta privada do aplicativo');
-  const link=node('a','Abrir aplicativo em nova aba');link.target='_blank';link.rel='noopener noreferrer';link.hidden=true;
-  const hint=node('p','Aplicativos com servidor ou banco de dados precisam ser iniciados conforme o README. No Codespaces, confirme que a porta do aplicativo está Privada. A execução fica em outra origem e não compartilha a sessão do Kodexa.');
+  const link=node('a','Abrir versão completa do aplicativo');link.target='_blank';link.rel='noopener noreferrer';link.hidden=true;
+  const hint=node('p','Se a prévia ficar em Carregando, a interface provavelmente depende de uma API. Abra a versão completa pela porta privada abaixo, após iniciar o servidor conforme o README. A prévia HTML não executa o backend.');
   const updateLink=()=>{const url=privatePortUrl(location.origin,Number(port.value));if(url){link.href=url;link.hidden=false;}else{link.removeAttribute('href');link.hidden=true;}};
   port.oninput=updateLink;updateLink();
   const close=button('Fechar prévia',()=>dialog.close());
