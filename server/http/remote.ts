@@ -157,7 +157,7 @@ export class RemoteSessions {
 
   issue(): { token: string; maxAgeS: number } {
     const exp = this.now() + SESSION_MS;
-    const payload = `v1.${exp}`;
+    const payload = `v2.${exp}.${randomBytes(16).toString('base64url')}`;
     return { token: `${payload}.${this.sign(payload)}`, maxAgeS: Math.floor(SESSION_MS / 1000) };
   }
 
@@ -178,13 +178,14 @@ export class RemoteSessions {
 
   private parse(token: string | undefined): { exp: number; sig: string } | undefined {
     if (!token) return undefined;
-    const m = /^v1\.(\d{10,16})\.([A-Za-z0-9_-]{43})$/.exec(token);
-    if (!m) return undefined;
-    const exp = Number(m[1]);
-    if (exp <= this.now()) return undefined;
-    const expected = Buffer.from(this.sign(`v1.${m[1]}`));
-    const got = Buffer.from(m[2]);
-    return expected.length === got.length && timingSafeEqual(expected, got) ? { exp, sig: m[2] } : undefined;
+    const m=/^(v2\.(\d{10,16})\.[A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]{43})$/.exec(token)
+      ?? /^(v1\.(\d{10,16}))\.([A-Za-z0-9_-]{43})$/.exec(token);
+    if(!m)return undefined;
+    const exp=Number(m[2]);
+    if(exp<=this.now())return undefined;
+    const expected=Buffer.from(this.sign(m[1]));
+    const got=Buffer.from(m[3]);
+    return expected.length===got.length&&timingSafeEqual(expected,got)?{exp,sig:m[3]}:undefined;
   }
 
   private loadRevoked(): void {

@@ -353,6 +353,13 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       const studio = deps.studio;
       if (!studio) {req.resume();sendJson(res,503,{error:'Estúdio indisponível.'});return true;}
       if (path === '/api/studio' && method === 'GET') {sendJson(res,200,studio.info());return true;}
+      const archive=/^\/api\/studio\/projects\/([a-f0-9-]+)\/archive$/.exec(path);
+      if(archive&&method==='GET'){
+        if(!trusted(req,'spawn')){sendJson(res,403,{error:'Exportação não autorizada.'});return true;}
+        try{const zip=studio.archive(archive[1]);res.writeHead(200,{'Content-Type':'application/zip','Content-Length':zip.length,'Content-Disposition':'attachment; filename="kodexa-'+archive[1]+'.zip"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(zip);}
+        catch(err){if(err instanceof ProjectError)sendJson(res,err.status,{error:err.message});else fail(res,err);}
+        return true;
+      }
       if (method !== 'POST') {methodNotAllowed(res,'POST');return true;}
       void (async()=>{
         const body = await readJson(req);

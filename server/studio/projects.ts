@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { configuredExecutor, projectWorkspace, type ExecutionRunner } from './execution';
 import { DELIVERY_ROLES } from '../../shared/studio-project';
 import { knowledgeFor } from '../academy/study';
+import { workspaceZip } from './archive';
 import { STAGES, type StudioInfo, type StudioProject, type ProjectStage } from '../../shared/studio-project';
 
 export class ProjectError extends Error {
@@ -130,6 +131,12 @@ export class ProjectStudio {
     try{this.save();}catch(e){p.delivery=previous;this.active=false;throw e;}
     void this.runDelivery(p);
     return structuredClone(p);
+  }
+  archive(id:string):Buffer{
+    const p=this.find(id);
+    if(this.active||!p.delivery||p.delivery.state==='running')throw new ProjectError(409,'Aguarde a conclusão das sessões antes de exportar.');
+    try{return workspaceZip(projectWorkspace(join(this.options.dir,'workspaces'),p.id));}
+    catch{throw new ProjectError(409,'Não há arquivos exportáveis ou o limite de 20 MB/2000 arquivos foi excedido.');}
   }
   private async runDelivery(p:StudioProject){
     const delivery=p.delivery!;

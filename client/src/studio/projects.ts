@@ -69,6 +69,7 @@ export function mountProjects(){
         if(p.delivery.error)content.append(el('p',p.delivery.error));
         if(p.delivery.state==='review')content.append(el('p','Sessões concluídas. Revise os arquivos e os relatórios antes de publicar. O término da sessão não comprova que todos os testes passaram.'));
         if(p.delivery.state==='running'){content.append(el('p','Equipe executando o projeto no servidor.'));return;}
+        const zip=el('a','Baixar ZIP dos arquivos gerados');zip.href=base+'/archive';zip.download='kodexa-'+p.id+'.zip';content.append(zip,el('p','Exportação de até 20 MB/2000 arquivos. Revise o conteúdo antes de compartilhar.'));
       }
       if(p.delivery?.state!=='review'){
         const execute=btn(p.delivery?'Retomar execução Codex':'Construir projeto com Codex',()=>{

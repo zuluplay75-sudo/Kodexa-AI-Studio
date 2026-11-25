@@ -95,7 +95,7 @@ describe('RemoteSessions', () => {
     expect(maxAgeS).toBe(SESSION_MS / 1000);
     expect(sessions.verify(token)).toBe(true);
     expect(sessions.verify(token.slice(0, -1) + (token.endsWith('A') ? 'B' : 'A'))).toBe(false);
-    expect(sessions.verify(token.replace(/^v1\.\d+/, `v1.${now + SESSION_MS * 2}`))).toBe(false);
+    expect(sessions.verify(token.replace(/^v2\.\d+/, `v2.${now + SESSION_MS * 2}`))).toBe(false);
     expect(new RemoteSessions(SECRET, { ...CFG, passwordHashText: 'outro-hash' }, () => now).verify(token)).toBe(false);
     expect(sessions.verify(undefined)).toBe(false);
     expect(sessions.verify('lixo')).toBe(false);
@@ -109,7 +109,8 @@ describe('RemoteSessions', () => {
     const file = join(tmp.dir, 'data', 'remote-revoked.json');
     const sessions = new RemoteSessions(SECRET, CFG, () => now, file);
     const phone = sessions.issue().token;
-    const other = new RemoteSessions(SECRET, CFG, () => now + 1).issue().token;
+    const other = new RemoteSessions(SECRET, CFG, () => now).issue().token;
+    expect(phone).not.toBe(other);
     sessions.revoke(phone);
     sessions.revoke('lixo');
     expect(sessions.verify(phone)).toBe(false);

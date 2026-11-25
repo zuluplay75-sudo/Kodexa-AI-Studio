@@ -35,5 +35,9 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm test
       - name: Production build
+        id: build
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run build
+      - name: Production login smoke test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: npx --no-install tsx scripts/kodexa-smoke.ts
