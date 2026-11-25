@@ -382,8 +382,12 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       void (async()=>{
         const body = await readJson(req);
         if(path === '/api/studio/projects') return sendJson(res,201,studio.create(body));
-        const match = /^\/api\/studio\/projects\/([a-f0-9-]+)\/(next|approve|deliver)$/.exec(path);
+        const match = /^\/api\/studio\/projects\/([a-f0-9-]+)\/(next|approve|deliver|revise)$/.exec(path);
         if (!match) return sendJson(res,404,{error:'Rota desconhecida.'});
+        if(match[2]==='revise'){
+          if(!trusted(req,'spawn'))return sendJson(res,403,{error:'Cópia de projeto não autorizada.'});
+          return sendJson(res,201,studio.revise(match[1],body));
+        }
         if(match[2]==='deliver'){
           if(!trusted(req,'spawn'))return sendJson(res,403,{error:'Execução de código não autorizada.'});
           return sendJson(res,202,studio.deliver(match[1],(body as {approved?:unknown}|null)?.approved));

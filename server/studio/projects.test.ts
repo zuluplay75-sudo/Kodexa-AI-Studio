@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -86,6 +86,38 @@ describe('project studio',()=>{
     expect(execute.mock.calls.map(c=>c[0].role)).toEqual(['dev','qa','shield']);
     expect(new Set(execute.mock.calls.map(c=>c[0].workspace)).size).toBe(1);
     expect(new ProjectStudio({dir:d,env:{}}).info().projects[0].delivery?.steps).toHaveLength(3);
+  });
+  it('creates a source-only independent revision, requires approval and records real handoffs',async()=>{
+    const d=dir(),run=vi.fn(async(_p:unknown,s:typeof STAGES[number])=>({text:s[0],sources:[]}));
+    const execute=vi.fn(async(job:import('./execution').ExecutionJob)=>{
+      if(job.role==='dev')writeFileSync(join(job.workspace,'index.html'),job.project.revision?'updated':'original');
+      return job.role+' report';
+    });
+    const studio=new ProjectStudio({dir:d,env:{},run,execute});
+    const p=studio.create({brief:'Criar aplicativo de oficina',research:false});
+    await studio.next(p.id);studio.approve(p.id,'Aplicativo aprovado');
+    for(let i=1;i<STAGES.length;i++)await studio.next(p.id);
+    studio.deliver(p.id,true);
+    await vi.waitFor(()=>expect(studio.info().projects[0].delivery?.state).toBe('review'));
+    const original=studio.info().projects[0],workspace=original.delivery!.workspace;
+    writeFileSync(join(workspace,'.env'),'secret');writeFileSync(join(workspace,'demo.sqlite3'),'private');
+    expect(()=>studio.revise(p.id,{request:'Adicionar cadastro de estoque',approved:false})).toThrow();
+    const rev=studio.revise(p.id,{request:'Adicionar cadastro de estoque',approved:true});
+    expect(rev.revision).toMatchObject({baseId:p.id,rootId:p.id,version:2,files:1});
+    const copied=join(d,'workspaces',rev.id);
+    expect(readFileSync(join(copied,'index.html'),'utf8')).toBe('original');
+    expect(existsSync(join(copied,'.env'))).toBe(false);expect(existsSync(join(copied,'demo.sqlite3'))).toBe(false);
+    expect(()=>studio.deliver(rev.id,true)).toThrow();
+    await studio.next(rev.id);studio.approve(rev.id,'Estoque autorizado');studio.launch(rev.id,true);
+    await vi.waitFor(()=>expect(studio.info().projects[0].state).toBe('complete'));
+    const planned=studio.info().projects[0];
+    expect(planned.handoffs?.find(h=>h.to==='dev')).toMatchObject({phase:'planning',state:'completed',from:expect.arrayContaining(['academy','design','network'])});
+    studio.deliver(rev.id,true);
+    await vi.waitFor(()=>expect(studio.info().projects[0].delivery?.state).toBe('review'));
+    expect(readFileSync(join(workspace,'index.html'),'utf8')).toBe('original');
+    expect(readFileSync(join(copied,'index.html'),'utf8')).toBe('updated');
+    expect(studio.info().projects[0].handoffs?.filter(h=>h.phase==='delivery')).toHaveLength(3);
+    expect(new ProjectStudio({dir:d,env:{}}).info().projects).toHaveLength(2);
   });
   it('does not invent execution when provider unavailable or fails',async()=>{
     const s=new ProjectStudio({dir:dir(),env:{}});

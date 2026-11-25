@@ -20,9 +20,11 @@ export function nextPlanningStages(p:Pick<StudioProject,'stages'>,parallel=false
 }
 export type StudioPreview={html:string;entry:string;portLinkAvailable:boolean};
 export type StudioRuntime={available:boolean;state:'stopped'|'starting'|'running'|'stopping'|'failed';port?:number;message:string;profile?:string};
+export type StudioRevision={baseId:string;rootId:string;version:number;request:string;baseBrief:string;baseDecision?:string;files:number;manifest:string[]};
+export type StudioHandoff={id:string;phase:'planning'|'delivery';to:StudioRole;from:StudioRole[];at:string;state:'started'|'completed'|'failed'};
 export type ProjectStage = { role: StudioRole; text: string; sources: string[]; at: string };
 export const DELIVERY_ROLES = ['dev','qa','shield'] as const;
 export type DeliveryRole = typeof DELIVERY_ROLES[number];
 export type DeliveryRun = { state:'running'|'failed'|'review'; steps:{role:DeliveryRole; report:string; at:string}[]; error?:string; workspace:string };
-export type StudioProject = { id: string; brief: string; research: boolean; decision?: string; stages: ProjectStage[]; state: 'new'|'running'|'approval'|'ready'|'complete'|'failed'; error?: string; createdAt: string; delivery?:DeliveryRun; runningRoles?:StudioRole[]; failedRoles?:StudioRole[] };
+export type StudioProject = { id: string; brief: string; research: boolean; decision?: string; stages: ProjectStage[]; state: 'new'|'running'|'approval'|'ready'|'complete'|'failed'; error?: string; createdAt: string; delivery?:DeliveryRun; runningRoles?:StudioRole[]; failedRoles?:StudioRole[]; revision?:StudioRevision; handoffs?:StudioHandoff[] };
 export type StudioInfo = { configured: boolean; webResearch: boolean; executionAvailable?:boolean; provider: string; projects: StudioProject[] };

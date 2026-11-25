@@ -38,7 +38,7 @@ export function mountProjects(){
     content.append(el('p',info.configured?'IA conectada por configuração do servidor: '+info.provider+' (credenciais ainda podem precisar de validação).':'IA ainda não configurada no servidor. Projetos podem ser salvos, mas não executados.'));
     const pick=el('select');pick.setAttribute('aria-label','Projetos salvos');
     const empty=el('option','Novo projeto');empty.value='';pick.append(empty);
-    for(const p of info.projects){const opt=el('option',p.brief.slice(0,80));opt.value=p.id;pick.append(opt);}
+    for(const p of info.projects){const opt=el('option',(p.revision?'V'+p.revision.version+' — ':'V1 — ')+p.brief.slice(0,80));opt.value=p.id;pick.append(opt);}
     pick.value=selected;pick.disabled=busy;pick.onchange=()=>{selected=pick.value;render();};content.append(pick);
     const p=info.projects.find(x=>x.id===selected);
     if(!p){
@@ -48,6 +48,12 @@ export function mountProjects(){
       content.append(brief,label,create);return;
     }
     content.append(el('h3',p.brief),el('p','Etapas de planejamento concluídas: '+p.stages.length+' de '+STAGES.length));
+    if(p.revision){content.append(el('p','Versão '+p.revision.version+' · '+p.revision.files+' arquivos de origem copiados · '+p.revision.baseBrief));const previous=btn('Abrir versão de origem',()=>{selected=p.revision!.baseId;render();});previous.disabled=busy;content.append(previous);}
+    const rootId=p.revision?.rootId??p.id;
+    const versions=info.projects.filter(x=>x.id===rootId||x.revision?.rootId===rootId).sort((a,b)=>(a.revision?.version??1)-(b.revision?.version??1));
+    if(versions.length>1){const history=el('details');history.append(el('summary','Histórico de versões ('+versions.length+')'));for(const v of versions){const b=btn('V'+(v.revision?.version??1)+' — '+v.brief.slice(0,90)+(v.id===p.id?' (atual)':''),()=>{selected=v.id;render();});b.disabled=busy||v.id===p.id;history.append(b);}content.append(history);}
+    if(p.delivery?.state==='review'){const change=el('textarea');change.placeholder='Descreva melhorias ou correções desta versão…';change.maxLength=4000;change.rows=3;const revise=btn('Evoluir este projeto',()=>{const request=change.value.trim();if(request.length<10){status.textContent='Descreva a alteração com pelo menos 10 caracteres.';return;}if(confirm('Criar uma nova versão com cópia dos arquivos de código? A versão original será preservada. Revise os arquivos antes de prosseguir; dados e segredos conhecidos são excluídos.'))void action(async()=>{const next=await api<StudioProject>('/api/studio/projects/'+p.id+'/revise',{request,approved:true});selected=next.id;});});revise.disabled=busy||info.projects.some(x=>x.state==='running'||x.delivery?.state==='running');content.append(el('h4','Melhorar projeto existente'),change,revise);}
+    if(p.handoffs?.length){const h=el('details');h.append(el('summary','Comunicação da equipe ('+p.handoffs.length+' repasses)'));for(const item of [...p.handoffs].reverse()){const name=(r:string)=>STAGES.find(s=>s[0]===r)?.[1]??r;const from=item.from.length?item.from.map(name).join(', '):'Briefing do diretor';h.append(el('p',from+' → '+name(item.to)+' · '+(item.phase==='delivery'?'execução':'planejamento')+' · '+({started:'em execução',completed:'concluído',failed:'interrompido'}[item.state])));}content.append(h);}
     if(p.runningRoles?.length)content.append(el('p','Trabalhando agora: '+p.runningRoles.map(r=>STAGES.find(s=>s[0]===r)?.[1]??r).join(' · ')));
     for(const s of p.stages){
       const details=el('details');details.open=s===p.stages.at(-1);details.append(el('summary',STAGES.find(x=>x[0]===s.role)?.[1]??s.role),el('pre',s.text));
