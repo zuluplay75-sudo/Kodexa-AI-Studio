@@ -85,7 +85,7 @@ export function documentExcerpt(html: string): string {
   const main = html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1] ?? html;
   return main.replace(/<(script|style|nav|footer|header|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
     .replace(/<!--[^]*?-->/g, ' ').replace(/<[^>]*>/g, ' ')
-    .replace(/&(?:nbsp|amp|lt|gt|quot|#39);/g, e => ({'&nbsp;':' ','&amp;':'&','&lt;':'<','&gt;':'>','&quot;':'"','&#39;':"'"})[e] ?? e)
+    .replace(/&(?:nbsp|amp|lt|gt|quot|#39);/g, e => ({'&nbsp;':' ','&amp;':'&','&lt;':'<','&gt;':'>','&quot;':'"','&#39;':"'"} as Record<string,string>)[e] ?? e)
     .replace(/\s+/g, ' ').trim().slice(0, MAX_INPUT);
 }
 function modelConfigured(env: NodeJS.ProcessEnv): boolean {
