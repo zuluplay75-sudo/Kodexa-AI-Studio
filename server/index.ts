@@ -358,7 +358,7 @@ const ticker = setInterval(() => {
 let studio: ProjectStudio | undefined;
 let academyStudy:AcademyStudy|undefined;
 if (!config.demo && config.host === '127.0.0.1') {
-  try { studio = new ProjectStudio({dir:join(config.dataDir,'studio'),academyDir:join(config.dataDir,'academy')}); }
+  try { studio = new ProjectStudio({dir:join(config.dataDir,'studio'),academyDir:join(config.dataDir,'academy'),onChange:info=>office.syncStudio(info)});office.syncStudio(studio.info()); }
   catch { log.warn('Kodexa Studio: armazenamento indisponível.'); }
 }
 if(!config.demo&&config.host==='127.0.0.1'){

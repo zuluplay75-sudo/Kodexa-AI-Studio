@@ -11,7 +11,7 @@ export class ProjectError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
 type Run = (project: StudioProject, stage: typeof STAGES[number]) => Promise<{text:string; sources:string[]}>;
-type Options = { dir: string; env?: NodeJS.ProcessEnv; fetcher?: typeof fetch; run?: Run; execute?:ExecutionRunner; academyDir?:string; planner?:CliPlanner };
+type Options = { dir: string; env?: NodeJS.ProcessEnv; fetcher?: typeof fetch; run?: Run; execute?:ExecutionRunner; academyDir?:string; planner?:CliPlanner; onChange?:(info:StudioInfo)=>void };
 function config(env: NodeJS.ProcessEnv) {
   const provider = env.KODEXA_STUDIO_PROVIDER || env.KODEXA_ACADEMY_PROVIDER || 'openai';
   const model = env.KODEXA_STUDIO_MODEL || env.KODEXA_ACADEMY_MODEL || '';
@@ -52,6 +52,7 @@ export class ProjectStudio {
       writeFileSync(tmp, JSON.stringify({schema:1,projects:this.projects}), {mode:0o600,flag:'wx'});
       renameSync(tmp,this.file);
     } finally { rmSync(tmp,{force:true}); }
+    try{this.options.onChange?.(this.info());}catch{/* visual subscriber must not interrupt persisted workflow */}
   }
   info(): StudioInfo {
     const c = config(this.env);

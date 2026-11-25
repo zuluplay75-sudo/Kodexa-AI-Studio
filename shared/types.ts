@@ -128,6 +128,7 @@ export interface AgentStats {
 }
 
 export interface AgentInfo {
+  managed?: {role:string; projectId?:string; phase:'planning'|'delivery'; state:'pending'|'working'|'completed'|'waiting'|'failed'};
   /**
    * Estável enquanto o agente existir. Claude Code: principal "<conta>:<pid>", sub "<sessionId>:<agentId>".
    * Codex: principal e sub "<conta>:<threadId>" (o sub com `parentId`).
@@ -189,6 +190,7 @@ export interface AgentInfo {
 }
 
 export interface RoomInfo {
+  managed?: boolean;
   /** Chave estável: cwd normalizado do projeto. */
   id: string;
   /** Nome exibido (basename do cwd, desambiguado se repetido). */

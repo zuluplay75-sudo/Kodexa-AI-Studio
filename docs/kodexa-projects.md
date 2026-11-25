@@ -14,3 +14,6 @@ Após concluir ou interromper as sessões, Baixar ZIP exporta somente arquivos r
 
 ### Planejamento por Codex CLI
 Alternativamente a uma chave API, configure KODEXA_STUDIO_PROVIDER=codex-cli e KODEXA_EXEC_CODEX_HOME com uma pasta absoluta privada de uma conta Codex dedicada autenticada. O planejamento usa a CLI com sandbox read-only, sem pesquisa web; cada cargo recebe a decisão e os resultados anteriores. A conta precisa estar apta a usar a CLI. KODEXA_EXEC_ENABLED=1 habilita separadamente a geração de código, nas condições descritas acima. A pesquisa web pelo Scout e o estudo multimídia permanecem recursos de API, com respectivas credenciais e limites.
+
+### Escritório integrado
+Os oito cargos são exibidos na sala Kodexa AI Studio e atualizados pelo estado persistido do projeto ativo via SSE. Apenas a etapa real em andamento fica trabalhando; os demais aguardam ou exibem conclusão. Os avatares não são oito sessões CLI simultâneas, não oferecem terminal próprio e não inventam tokens ou resultados de testes. Os relatórios permanecem em Projetos IA.

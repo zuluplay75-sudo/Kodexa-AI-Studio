@@ -17,7 +17,7 @@ const NAME_MAX = 40;
 export function canRenameRoom(ctx: UiContext, roomId: string): boolean {
   return (
     !!ctx.renameRoom &&
-    !isDemoId(roomId) &&
+    !isDemoId(roomId) && !ctx.store.room(roomId)?.managed &&
     !ctx.store.mock &&
     !ctx.store.replaying &&
     !!ctx.store.snapshot?.meta.terminal &&
