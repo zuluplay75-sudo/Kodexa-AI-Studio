@@ -5,7 +5,7 @@ import { configuredCliPlanner, configuredExecutor, projectWorkspace, type CliPla
 import { DELIVERY_ROLES } from '../../shared/studio-project';
 import { knowledgeFor } from '../academy/study';
 import { workspaceZip } from './archive';
-import { STAGES, nextPlanningStages, type StudioInfo, type StudioProject, type ProjectStage } from '../../shared/studio-project';
+import { STAGES, nextPlanningStages, type StudioInfo, type StudioProject, type ProjectStage, type StudioRole } from '../../shared/studio-project';
 import { readPreview } from './preview';
 
 export class ProjectError extends Error {
@@ -118,7 +118,7 @@ export class ProjectStudio {
     this.active=true;p.state='running';delete p.error;
     p.runningRoles=stages.map(s=>s[0]);delete p.failedRoles;
     try{this.save();}catch(e){p.state=before;p.error=priorError;p.failedRoles=priorFailed;delete p.runningRoles;this.active=false;throw e;}
-    const context=structuredClone(p);
+    const context=structuredClone(p),failed:StudioRole[]=[];
     try{
       await Promise.all(stages.map(async stage=>{
         try{
@@ -131,12 +131,12 @@ export class ProjectStudio {
           try{this.save();}catch(e){p.stages=p.stages.filter(s=>s!==out);throw e;}
         }catch{
           p.runningRoles=p.runningRoles!.filter(r=>r!==stage[0]);
-          (p.failedRoles??=[]).push(stage[0]);
+          failed.push(stage[0]);p.failedRoles=[...failed];
           try{this.save();}catch{/* final write retries persistence */}
         }
       }));
       delete p.runningRoles;
-      if(p.failedRoles?.length){p.state='failed';p.error='Uma ou mais etapas falharam. Resultados concluídos foram preservados; execute a equipe restante para retomar.';}
+      if(failed.length){p.state='failed';p.error='Uma ou mais etapas falharam. Resultados concluídos foram preservados; execute a equipe restante para retomar.';}
       else{delete p.failedRoles;p.state=stages[0][0]==='scout'?'approval':p.stages.length===STAGES.length?'complete':'ready';}
       this.save();
     }finally{this.active=false;}
