@@ -427,6 +427,16 @@ const guard = createRequestGuard({ allowedHosts: config.allowedHosts });
 server.on('request', (req, res) => {
   const url = parseUrl(req);
   try {
+    // Defense in depth: the local integration port must not be forwarded to a browser.
+    // Codespaces forwarding visibility must still be checked by the operator.
+    if (config.remote?.codespaceProxyHost && (
+      !isLoopbackHost(req.headers.host) || req.headers['x-forwarded-host'] !== undefined ||
+      req.headers['x-forwarded-proto'] !== undefined || req.headers.forwarded !== undefined
+    )) {
+      req.resume();
+      sendJson(res, 403, { error: 'Use a porta autenticada 4748 do Kodexa.' });
+      return;
+    }
     if (guard(req, res)) return;
     if (!api(req, res, url)) fallback(req, res, url);
   } catch (err) {

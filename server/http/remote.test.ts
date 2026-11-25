@@ -190,7 +190,7 @@ afterEach(async () => {
 });
 
 /** Uma porta local (sem login) e uma remota (com login), sobre a MESMA API, como no server/index.ts. */
-async function start(allow: RemoteFeature[] = ['permissions']): Promise<Harness> {
+async function start(allow: RemoteFeature[] = ['permissions'], secure = false): Promise<Harness> {
   const tmp = tempDir();
   const dir = join(tmp.dir, '.claude');
   mkdirSync(join(dir, 'sessions'), { recursive: true });
@@ -246,7 +246,7 @@ async function start(allow: RemoteFeature[] = ['permissions']): Promise<Harness>
     },
   });
   const guard = createRequestGuard();
-  const gate = createRemoteGate({ config: CFG, sessions: new RemoteSessions(SECRET, CFG), secure: false });
+  const gate = createRemoteGate({ config: CFG, sessions: new RemoteSessions(SECRET, CFG), secure });
   const page = (_req: http.IncomingMessage, res: http.ServerResponse) => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end('<!doctype html><title>Habblaud</title>');
@@ -319,6 +319,24 @@ async function login(base: string): Promise<string> {
 }
 
 describe('porta remota', () => {
+  it('protects the mobile workspace and issues a Secure cookie behind HTTPS proxy', async () => {
+    const s = await start(['permissions'], true);
+    expect((await request(s.remoteBase, '/')).status).toBe(302);
+    expect((await request(s.remoteBase, '/api/health')).status).toBe(401);
+    const page = await request(s.remoteBase, '/login');
+    expect(page.body).toContain('Kodexa AI Studio');
+    expect(page.body).toContain('/assets/brand/kodexa-logo.svg');
+    expect((await request(s.remoteBase, '/assets/brand/kodexa-logo.svg')).status).toBe(200);
+    expect((await request(s.remoteBase, '/assets/brand/not-public.svg')).status).toBe(302);
+    const result = await request(s.remoteBase, '/api/remote/login', { method: 'POST', body: CREDS });
+    expect(result.status).toBe(200);
+    const raw = result.headers['set-cookie']?.[0] ?? '';
+    expect(raw).toMatch(/; Secure/);
+    const headers = { Cookie: raw.split(';')[0] };
+    expect((await request(s.remoteBase, '/api/health', { headers })).status).toBe(200);
+    expect((await request(s.remoteBase, '/api/remote/logout', { method: 'POST', headers, body: {} })).status).toBe(200);
+    expect((await request(s.remoteBase, '/api/health', { headers })).status).toBe(401);
+  });
   it('logado: terminal interativo, rotas do hook e do plugin e o auxiliar nunca passam, nem com Host local', async () => {
     const s = await start(['permissions', 'messages', 'terminal', 'spawn']);
     const cookie = await login(s.remoteBase);
