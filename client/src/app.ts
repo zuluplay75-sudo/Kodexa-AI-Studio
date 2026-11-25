@@ -44,7 +44,8 @@ export function start(): void {
   }
 
   // Facilita a depuração pelo console do navegador.
-  Object.assign(window, { habblaud: { store, world, city } });
+  const studioDebug = { store, world, city };
+  Object.assign(window, { kodexa: studioDebug, habblaud: studioDebug });
 }
 
 /**
