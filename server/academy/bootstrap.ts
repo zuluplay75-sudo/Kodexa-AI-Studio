@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile, rm, rmdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -122,7 +122,16 @@ async function discover(fetcher: Fetcher, key: string, query: string): Promise<V
 
 /** Single-worker loop. No external calls unless the owner explicitly enables it.
  * Only fixed documentation URLs are fetched; redirects and arbitrary URLs are not accepted. */
+async function withAcademyLock<T>(dir: string, work: () => Promise<T>): Promise<T> {
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  const lock = join(dir, '.worker-lock');
+  await mkdir(lock, { mode: 0o700 });
+  try { return await work(); } finally { await rmdir(lock); }
+}
 export async function runAcademyOnce(options: Options): Promise<AcademyState> {
+  return withAcademyLock(options.dir, () => runAcademyLocked(options));
+}
+async function runAcademyLocked(options: Options): Promise<AcademyState> {
   const env = options.env ?? process.env;
   const fetcher = options.fetcher ?? fetch;
   const now = dateOf(options), day = now.toISOString().slice(0, 10);
@@ -174,6 +183,9 @@ export async function runAcademyOnce(options: Options): Promise<AcademyState> {
 
 /** Authorized local transcript only: no scraping/downloading of third-party videos. */
 export async function studyTranscript(options: Options, role: Role, source: string, transcript: string): Promise<Note> {
+  return withAcademyLock(options.dir, () => studyTranscriptLocked(options, role, source, transcript));
+}
+async function studyTranscriptLocked(options: Options, role: Role, source: string, transcript: string): Promise<Note> {
   const env = options.env ?? process.env;
   if (env.KODEXA_ACADEMY_AUTO !== '1' || !modelConfigured(env)) throw new Error('Academy or model not enabled');
   if (!CURRICULUM.some(r => r.id === role) || transcript.trim().length < 100 || transcript.length > MAX_INPUT || !source.trim() || source.length > 500) throw new Error('Invalid role, source or transcript length (100–16000 characters)');
