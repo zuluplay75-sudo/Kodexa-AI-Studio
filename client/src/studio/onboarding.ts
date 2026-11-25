@@ -23,7 +23,7 @@ function select<T extends string>(options: ReadonlyArray<readonly [T,string]>, v
   return node;
 }
 const providers: ReadonlyArray<readonly [Provider,string]> = [['unconfigured','Configurar depois'],['claude','Claude Code'],['codex','Codex']];
-const themes: ReadonlyArray<readonly [StudioPrefs['theme'],string]> = [['midnight','Meia-noite · azul e violeta'],['ocean','Oceano · azul e ciano'],['graphite','Grafite · neutro']];
+const themes: ReadonlyArray<readonly [StudioPrefs['theme'],string]> = [['pixel','Pixel clássico · dourado e verde'],['midnight','Meia-noite · azul e violeta'],['ocean','Oceano · azul e ciano'],['graphite','Grafite · neutro']];
 
 export function mountStudioSetup(): void {
   if (document.getElementById('kodexa-setup-launch')) return;
@@ -35,8 +35,9 @@ export function mountStudioSetup(): void {
   document.body.append(launch,dialog);
   function open() {
     const existing = readPrefs();
-    const draft: StudioPrefs = existing ?? {schema:1,company:'Minha empresa',theme:'midnight',members:defaultMembers()};
-    const title = el('h1','Kodexa AI Studio');
+    const draft: StudioPrefs = existing ?? {schema:1,company:'Minha empresa',theme:'pixel',members:defaultMembers()};
+    const title = el('h1');
+    const logo = el('img'); logo.src = '/assets/brand/kodexa-logo.svg'; logo.alt = 'Kodexa AI Studio'; logo.width = 240; logo.height = 96; title.append(logo);
     const description = el('p','Configure sua empresa virtual e escolha os cargos iniciais. Estas preferências ficam neste navegador.');
     const status = el('p',''); status.setAttribute('role','status');
     const form = el('form');
