@@ -25,7 +25,7 @@ export function nextPlanningStages(p:Pick<StudioProject,'stages'>,parallel=false
   return STAGES.filter(s=>roles.includes(s[0])).slice(0,parallel?roles.length:1);
 }
 export type StudioPreview={html:string;entry:string;portLinkAvailable:boolean};
-export type StudioRuntime={available:boolean;state:'stopped'|'starting'|'running'|'stopping'|'failed';port?:number;message:string;profile?:string};
+export type StudioRuntime={available:boolean;state:'stopped'|'starting'|'running'|'stopping'|'failed';port?:number;codespaceOrigin?:string;message:string;profile?:string};
 export type StudioRevision={baseId:string;rootId:string;version:number;request:string;baseBrief:string;baseDecision?:string;files:number;manifest:string[]};
 export type StudioHandoff={id:string;phase:'planning'|'delivery';to:StudioRole;from:StudioRole[];at:string;state:'started'|'completed'|'failed';provider?:string;fallbackFrom?:string};
 export type ProjectStage = { provider?:string; fallbackFrom?:string; role: StudioRole; text: string; sources: string[]; at: string };

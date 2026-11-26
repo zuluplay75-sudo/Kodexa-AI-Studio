@@ -25,7 +25,8 @@ export function openProjectPreview(p:StudioProject){
   const port=node('input');port.type='number';port.min='1024';port.max='65535';port.value='8000';port.setAttribute('aria-label','Porta privada do aplicativo');
   const link=node('a','Abrir versão completa do aplicativo');link.target='_blank';link.rel='noopener noreferrer';link.hidden=true;
   const hint=node('p','Se a prévia ficar em Carregando, a interface provavelmente depende de uma API. Abra a versão completa pela porta privada abaixo, após iniciar o servidor conforme o README. A prévia HTML não executa o backend.');
-  const updateLink=()=>{const url=privatePortUrl(location.origin,Number(port.value));if(url){link.href=url;link.hidden=false;}else{link.removeAttribute('href');link.hidden=true;}};
+  let codespaceOrigin=location.origin;
+  const updateLink=()=>{const url=privatePortUrl(codespaceOrigin,Number(port.value));if(url){link.href=url;link.hidden=false;}else{link.removeAttribute('href');link.hidden=true;}};
   port.oninput=updateLink;updateLink();
   const runtimePanel=node('section');runtimePanel.setAttribute('aria-label','Servidor de demonstração');
   const runtimeStatus=node('p','Verificando servidor…');runtimeStatus.setAttribute('role','status');
@@ -38,7 +39,7 @@ export function openProjectPreview(p:StudioProject){
     const response=await fetch(runtimeBase+(action?'/'+action:''),{credentials:'same-origin',cache:'no-store',...(action?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({approved:true})}:{})});
     const result=await response.json();if(!response.ok)throw Error(result.error??'Servidor indisponível.');return result as StudioRuntime;
   }
-  function showRuntime(r:StudioRuntime){if(closed)return;runtimeStatus.textContent=r.message;start.disabled=runtimeBusy||!r.available||r.state!=='stopped';stop.disabled=runtimeBusy||!['starting','running'].includes(r.state);const url=r.state==='running'&&r.port?privatePortUrl(location.origin,r.port):undefined;if(url){open.href=url;open.hidden=false;}else{open.hidden=true;open.removeAttribute('href');}}
+  function showRuntime(r:StudioRuntime){if(closed)return;codespaceOrigin=r.codespaceOrigin??location.origin;updateLink();runtimeStatus.textContent=r.message;start.disabled=runtimeBusy||!r.available||r.state!=='stopped';stop.disabled=runtimeBusy||!['starting','running'].includes(r.state);const url=r.state==='running'&&r.port?privatePortUrl(codespaceOrigin,r.port):undefined;if(url){open.href=url;open.hidden=false;}else{open.hidden=true;open.removeAttribute('href');}}
   async function refreshRuntime(){if(closed||runtimeBusy)return;try{showRuntime(await runtimeRequest());}catch(e){if(!closed)runtimeStatus.textContent=(e as Error).message;}}
   async function runtimeAction(action:'start'|'stop'){if(runtimeBusy)return;runtimeBusy=true;start.disabled=true;stop.disabled=true;runtimeStatus.textContent=action==='start'?'Iniciando servidor…':'Parando servidor…';try{const result=await runtimeRequest(action);runtimeBusy=false;showRuntime(result);}catch(e){runtimeBusy=false;if(!closed){runtimeStatus.textContent=(e as Error).message;start.disabled=false;}}}
   start.disabled=true;stop.disabled=true;runtimePanel.append(node('h3','Servidor de demonstração'),runtimeStatus,start,stop,open,node('p','A execução usa somente a versão verificada do Oficina em Dia, uma cópia descartável e a porta privada 8010. A sessão é encerrada após uma hora. Outros backends ainda exigem o README.'));

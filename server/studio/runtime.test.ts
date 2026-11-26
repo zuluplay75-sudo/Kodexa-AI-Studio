@@ -9,7 +9,7 @@ describe('verified demo runtime',()=>{
    writeFileSync(join(tmp.dir,'app.py'),'print("do not execute")');
    expect(()=>verifiedDemo(tmp.dir)).toThrow();
    const r=new DemoRuntime(tmp.dir,{KODEXA_RUNTIME_ENABLED:'1',CODESPACE_NAME:'example',GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:'app.github.dev'});
-   expect(r.status('test',tmp.dir).available).toBe(false);
+   expect(r.status('test',tmp.dir)).toMatchObject({available:false,codespaceOrigin:'https://example-4748.app.github.dev'});
    await expect(r.start('test',tmp.dir)).rejects.toThrow();
   }finally{tmp.cleanup();}
  });

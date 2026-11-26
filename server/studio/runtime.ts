@@ -58,12 +58,16 @@ export class DemoRuntime{
  private job?:Job;
  constructor(private readonly root:string,private readonly env:NodeJS.ProcessEnv){}
  status(id:string,workspace:string):StudioRuntime{
+  const name=this.env.CODESPACE_NAME;
+  const codespaceOrigin=name&&/^[a-z0-9-]+$/.test(name)&&this.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN==='app.github.dev'
+   ? 'https://'+name+'-4748.app.github.dev'
+   : undefined;
   const current=this.job;
-  if(current?.id===id)return {available:true,state:current.state,port:PORT,message:current.message,profile:PROFILE};
-  if(!supportedEnv(this.env))return {available:false,state:'stopped',message:'Inicialização automática desabilitada neste ambiente.'};
-  try{verifiedDemo(workspace);}catch{return {available:false,state:'stopped',message:'Backend ainda não suportado ou versão alterada. Use o README e uma porta privada.'};}
-  if(current)return {available:false,state:'stopped',message:'Outra demonstração está em execução.'};
-  return {available:true,state:'stopped',port:PORT,message:'Pronto para iniciar cópia temporária com dados de demonstração.',profile:PROFILE};
+  if(current?.id===id)return {codespaceOrigin,available:true,state:current.state,port:PORT,message:current.message,profile:PROFILE};
+  if(!supportedEnv(this.env))return {codespaceOrigin,available:false,state:'stopped',message:'Inicialização automática desabilitada neste ambiente.'};
+  try{verifiedDemo(workspace);}catch{return {codespaceOrigin,available:false,state:'stopped',message:'Backend ainda não suportado ou versão alterada. Use o README e uma porta privada.'};}
+  if(current)return {codespaceOrigin,available:false,state:'stopped',message:'Outra demonstração está em execução.'};
+  return {codespaceOrigin,available:true,state:'stopped',port:PORT,message:'Pronto para iniciar cópia temporária com dados de demonstração.',profile:PROFILE};
  }
  async start(id:string,workspace:string):Promise<StudioRuntime>{
   if(!supportedEnv(this.env)||this.job)throw Error('Runtime indisponível ou ocupado.');

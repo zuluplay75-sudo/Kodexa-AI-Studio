@@ -10,6 +10,8 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+- A prévia do Studio oferece o link da porta privada do Codespaces também ao abrir o Kodexa por um domínio próprio.
+
 ## [1.0.3] - 2026-10-16
 
 ### Corrigido
