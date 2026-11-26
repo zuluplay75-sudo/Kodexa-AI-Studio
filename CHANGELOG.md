@@ -10,6 +10,8 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+- Projetos IA agrupa versões e recolhe relatórios e ações avançadas.
+
 - O cartão do Codex atualiza as cotas também quando uma sessão rápida termina entre ciclos de leitura.
 
 - O totem da entrada do escritório exibe a marca KX.

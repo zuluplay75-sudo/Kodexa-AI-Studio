@@ -26,3 +26,14 @@
 
 #kodexa-preview a[href]{border:1px solid #7886a5;border-radius:8px;padding:10px 14px;background:#232e46;text-decoration:none;font-weight:600}
 #kodexa-preview a[hidden]{display:none}
+
+#kodexa-projects .kodexa-projects-toolbar,
+#kodexa-projects .kodexa-projects-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#kodexa-projects .kodexa-projects-toolbar{justify-content:space-between;border-bottom:1px solid #424d68;margin-bottom:12px}
+#kodexa-projects h2{margin:0;font-size:22px}
+#kodexa-projects .kodexa-projects-list{display:grid;gap:8px;list-style:none;padding:0;margin:12px 0 0}
+#kodexa-projects .kodexa-projects-row{display:grid;gap:3px;text-align:left;width:100%;margin:0;overflow-wrap:anywhere}
+#kodexa-projects .kodexa-projects-row:hover{background:#303e5c}
+#kodexa-projects .kodexa-projects-row small{color:#bdcbe3}
+#kodexa-projects summary{cursor:pointer}
+#kodexa-projects [role=status]:empty{display:none}
