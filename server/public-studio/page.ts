@@ -1,0 +1,82 @@
+export const publicStudioPage = `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Projetos | Kodexa AI Studio</title>
+<link rel="stylesheet" href="/public/studio.css"><script defer src="/public/studio.js"></script>
+</head>
+<body><main>
+<p>Kodexa AI Studio</p><h1>Meus projetos</h1>
+<a id="login" href="/public/google" hidden>Entrar com Google</a>
+<section id="projects" hidden>
+<button id="logout" type="button">Sair</button>
+<form id="create"><label for="brief">Descreva seu projeto</label>
+<textarea id="brief" minlength="10" maxlength="4000" required></textarea>
+<button type="submit">Criar projeto</button></form><ul id="list"></ul>
+</section>
+<p id="status" role="status"></p>
+</main></body></html>`;
+
+export const publicStudioStyles = `
+:root { color-scheme: dark; background: #101626; color: #eef3ff; font: 16px/1.5 system-ui; }
+main { max-width: 46rem; margin: 4rem auto; padding: 0 1.25rem; }
+main > p:first-child { color: #8cd8ff; font-weight: 650; margin-bottom: 0; }
+h1 { margin-top: .25rem; }
+a, button { color: inherit; background: #253754; border: 1px solid #657da3; border-radius: .5rem; padding: .65rem 1rem; font: inherit; cursor: pointer; }
+form { display: grid; gap: .75rem; margin: 2rem 0; }
+textarea { font: inherit; background: #17223a; color: inherit; border: 1px solid #657da3; border-radius: .5rem; padding: .75rem; min-height: 6rem; }
+form button { justify-self: start; }
+ul { padding: 0; list-style: none; }
+li { background: #17223a; padding: .85rem; margin: .5rem 0; border-radius: .5rem; overflow-wrap: anywhere; }
+`;
+
+export const publicStudioScript = `
+const login = document.getElementById('login');
+const projects = document.getElementById('projects');
+const list = document.getElementById('list');
+const status = document.getElementById('status');
+const brief = document.getElementById('brief');
+const create = document.getElementById('create');
+const submit = create.querySelector('button');
+
+async function refresh() {
+  const response = await fetch('/public/projects');
+  login.hidden = response.status !== 401;
+  projects.hidden = !response.ok;
+  if (response.status === 401) return;
+  if (!response.ok) throw new Error('Não foi possível abrir os projetos.');
+  const rows = await response.json();
+  list.replaceChildren(...(rows.length ? rows.map(project => project.brief) : ['Nenhum projeto criado.']).map(text => {
+    const row = document.createElement('li');
+    row.textContent = text;
+    return row;
+  }));
+}
+
+function showError(error) { status.textContent = error.message; }
+create.addEventListener('submit', async event => {
+  event.preventDefault();
+  submit.disabled = true;
+  status.textContent = '';
+  try {
+    const response = await fetch('/public/projects', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ brief: brief.value, research: false })
+    });
+    if (!response.ok) throw new Error((await response.json()).error);
+    create.reset();
+    await refresh();
+  } catch (error) { showError(error); }
+  finally { submit.disabled = false; }
+});
+document.getElementById('logout').addEventListener('click', async () => {
+  try {
+    const response = await fetch('/public/logout', { method: 'POST' });
+    if (!response.ok && response.status !== 401) throw new Error('Não foi possível sair.');
+    list.replaceChildren();
+    create.reset();
+    await refresh();
+  } catch (error) { showError(error); }
+});
+refresh().catch(showError);
+`;
