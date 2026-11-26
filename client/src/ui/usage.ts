@@ -231,7 +231,10 @@ export class UsageCards {
   }
 
   render(): void {
-    const accounts = this.ctx.store.snapshot?.accounts ?? [];
+    const snapshotAccounts = this.ctx.store.snapshot?.accounts ?? [];
+    // A conta virtual continua no snapshot para os agentes; não representa uma assinatura.
+    const accounts = snapshotAccounts.filter(a => a.id !== 'kodexa:managed');
+    if (!this.studioCard && snapshotAccounts.some(a => a.id === 'kodexa:managed')) this.updateStudioCard();
     this.list.sync(accounts);
     if(this.studioCard&&this.el.lastElementChild!==this.studioCard)this.el.append(this.studioCard);
     const count=accounts.length+(this.studioCard?1:0);
@@ -259,22 +262,30 @@ export class UsageCards {
       this.studioUnavailable=true;
     }finally{
       this.studioLoading=false;
-      if(this.studioReading){
-        if(!this.studioCard){
-          this.studioCard=h('div',{class:'ui-usage-card kodexa-planning-usage',tabIndex:0,attrs:{'aria-label':'Chamadas internas de planejamento do Kodexa'}});
-        }
-        const info=this.studioReading;
-        const rows=info.providers.map(p=>{
-          const label=this.studioLabels[p.id];
-          const n=this.studioUnavailable?'—':p.configured?String(p.calls)+'/'+info.routing.dailyLimit:'não configurado';
-          return h('div',{class:'kodexa-planning-usage__row',attrs:{title:label+': '+(this.studioUnavailable?'Dados indisponíveis':p.message)}},h('span',{text:label}),h('strong',{text:n}));
-        });
-        const description='Chamadas de planejamento e testes de conexão registradas pelo Kodexa, incluindo tentativas com falha; limite diário interno UTC. Não representa tokens, custos nem a cota da assinatura. Não inclui execução de código ou sessões externas.';
-        this.studioCard.title=description+(this.studioUnavailable?' Dados indisponíveis.':' Última leitura: '+new Date(this.studioFetchedAt).toLocaleTimeString());
-        this.studioCard.replaceChildren(h('div',{class:'kodexa-planning-usage__title',text:'Kodexa · chamadas/dia UTC'}),...rows);
+      if(this.studioReading||this.studioCard){
+        this.updateStudioCard();
         this.render();
       }
     }
+  }
+
+  private updateStudioCard():void{
+    if(!this.studioCard){
+      this.studioCard=h('div',{class:'ui-usage-card kodexa-planning-usage',tabIndex:0,attrs:{'aria-label':'Gemini: chamadas internas de planejamento do Kodexa'}});
+    }
+    const info=this.studioReading;
+    const gemini=info?.providers.find(p=>p.id==='gemini');
+    const available=!!info&&!!gemini&&!this.studioUnavailable;
+    const count=available&&info&&gemini?String(gemini.calls)+'/'+info.routing.dailyLimit:'—';
+    const status=!available||!gemini?'Sem dados':!gemini.configured?'Não configurado':gemini.state==='ok'?'Último teste OK':gemini.state==='failed'?'Última chamada falhou':'Sem teste';
+    const description='Limite diário interno do Kodexa (UTC): chamadas de planejamento e testes, incluindo falhas. Não representa tokens, custos nem cotas do Google. Não inclui execução ou sessões externas.';
+    const other=available&&info?info.providers.filter(p=>p.id!=='gemini').map(p=>this.studioLabels[p.id]+': '+p.calls+'/'+info.routing.dailyLimit+' chamadas internas').join('; '):'';
+    this.studioCard.title=description+(available&&gemini?' '+gemini.message+(gemini.at?' Última chamada: '+new Date(gemini.at).toLocaleString():'')+' Última leitura: '+new Date(this.studioFetchedAt).toLocaleTimeString():' Dados indisponíveis.')+(other?' '+other+'.':'');
+    this.studioCard.replaceChildren(
+      h('div',{class:'kodexa-planning-usage__title',text:'Gemini · API'}),
+      h('div',{class:'kodexa-planning-usage__row'},h('span',{text:'Chamadas/dia UTC'}),h('strong',{text:count})),
+      h('div',{class:'kodexa-planning-usage__row'},h('span',{text:'Status'}),h('strong',{text:status})),
+    );
   }
 
   /** Contas da última medida em fit() (ver render). */
