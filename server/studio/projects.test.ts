@@ -147,6 +147,25 @@ describe('project studio',()=>{
     expect(failed).toMatchObject({state:'failed',stages:[]});
     expect(failed.error).toContain('Kodexa Scout');expect(failed.error).not.toContain('private payload');
   });
+  it('rejects incomplete Anthropic planning reports and allows a clean retry',async()=>{
+    const f=vi.fn(async()=>new Response(JSON.stringify({stop_reason:'max_tokens',content:[{type:'text',text:'Partial plan'}]})));
+    const s=new ProjectStudio({dir:dir(),env:{KODEXA_STUDIO_PROVIDER:'anthropic',KODEXA_STUDIO_MODEL:'test-model',ANTHROPIC_API_KEY:'test-key'},fetcher:f as typeof fetch});
+    const p=s.create({brief:'Criar aplicativo de oficina',research:false});
+    expect(await s.next(p.id)).toMatchObject({state:'failed',stages:[]});
+    f.mockImplementation(async()=>new Response(JSON.stringify({stop_reason:'end_turn',content:[{type:'text',text:'Plano concluído'}]})));
+    expect(await s.next(p.id)).toMatchObject({state:'approval',stages:[{role:'scout',text:'Plano concluído',provider:'anthropic'}]});
+    expect(f).toHaveBeenCalledTimes(2);
+  });
+  it('rejects malformed or empty OpenAI planning output without marking a stage completed',async()=>{
+    const f=vi.fn(async()=>new Response(JSON.stringify({status:'completed',output:[{type:'message',content:[{type:'output_text',text:123}]}]})));
+    const s=new ProjectStudio({dir:dir(),env:{KODEXA_STUDIO_PROVIDER:'openai',KODEXA_STUDIO_MODEL:'test-model',OPENAI_API_KEY:'test-key'},fetcher:f as typeof fetch});
+    const p=s.create({brief:'Criar aplicativo de oficina',research:false});
+    expect(await s.next(p.id)).toMatchObject({state:'failed',stages:[]});
+    f.mockImplementation(async()=>new Response(JSON.stringify({status:'completed',output:[{type:'message',content:[{type:'output_text',text:'   '}]}]})));
+    expect(await s.next(p.id)).toMatchObject({state:'failed',stages:[]});
+    f.mockImplementation(async()=>new Response(JSON.stringify({status:'completed',output:[{type:'message',content:[{type:'output_text',text:'Plano válido'}]}]})));
+    expect(await s.next(p.id)).toMatchObject({state:'approval',stages:[{role:'scout',text:'Plano válido',provider:'openai'}]});
+  });
   it('asks the actual configured endpoint for web research and records citations',async()=>{
     const f=vi.fn(async()=>new Response(JSON.stringify({status:'completed',output:[{type:'web_search_call',status:'completed'},{type:'message',content:[{type:'output_text',text:'Pesquisa',annotations:[{type:'url_citation',url:'https://example.org'}]}]}]})));
     const s=new ProjectStudio({dir:dir(),env:{KODEXA_STUDIO_MODEL:'test-model',OPENAI_API_KEY:'test-key'},fetcher:f as typeof fetch});
