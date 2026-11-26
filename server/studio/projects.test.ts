@@ -8,6 +8,22 @@ const dirs:string[]=[];
 function dir(){const d=mkdtempSync(join(tmpdir(),'kodexa-studio-'));dirs.push(d);return d;}
 afterEach(()=>{for(const d of dirs.splice(0))rmSync(d,{recursive:true,force:true});});
 describe('project studio',()=>{
+  it('keeps projects and project actions isolated across studio data directories', async () => {
+    const ownerDir = dir();
+    const guestDir = dir();
+    const owner = new ProjectStudio({ dir: ownerDir, env: {} });
+    const guest = new ProjectStudio({ dir: guestDir, env: {} });
+    const ownerProject = owner.create({ brief: 'Projeto privado do proprietário', research: false });
+    const guestProject = guest.create({ brief: 'Projeto privado do visitante', research: false });
+
+    expect(new ProjectStudio({ dir: ownerDir, env: {} }).info().projects.map(p => p.id)).toEqual([ownerProject.id]);
+    expect(new ProjectStudio({ dir: guestDir, env: {} }).info().projects.map(p => p.id)).toEqual([guestProject.id]);
+    expect(() => guest.approve(ownerProject.id, 'Decisão do visitante')).toThrow(expect.objectContaining({ status: 404 }));
+    expect(() => guest.archive(ownerProject.id)).toThrow(expect.objectContaining({ status: 404 }));
+    expect(() => guest.preview(ownerProject.id)).toThrow(expect.objectContaining({ status: 404 }));
+    await expect(guest.next(ownerProject.id)).rejects.toMatchObject({ status: 404 });
+  });
+
   it('requires approval, runs each role in order and persists real outputs',async()=>{
     const d=dir(),run=vi.fn(async(_p:unknown,s:typeof STAGES[number])=>({text:s[0],sources:[]}));
     const s=new ProjectStudio({dir:d,env:{},run});
