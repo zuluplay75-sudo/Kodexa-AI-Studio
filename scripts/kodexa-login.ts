@@ -61,7 +61,7 @@ async function setup() {
 }
 async function start() {
   const host = codespaceLoginHost(process.env);
-  if (!host) throw new Error('Este comando é exclusivo do GitHub Codespaces com domínio app.github.dev.');
+  if (!host) throw new Error('Ambiente Codespaces ou domínio do túnel inválido.');
   const owner = JSON.parse(await readFile(file, 'utf8')) as Owner;
   if (typeof owner.user !== 'string' || !/^[a-zA-Z0-9_.@-]{1,80}$/.test(owner.user) || !parsePasswordHash(owner.hash)) throw new Error('Configure o login novamente.');
   // Preserve existing data dir and integrations; change only the launch-specific settings.
@@ -75,7 +75,11 @@ async function start() {
     HABBLAUD_TERMINAL: '1', HABBLAUD_MENSAGENS: '1', HABBLAUD_PTY: '1',
     KODEXA_RUNTIME_ENABLED: process.env.KODEXA_RUNTIME_ENABLED ?? '1',
   };
-  console.log('Encaminhe somente a porta 4748 como Private, protocolo HTTP interno. Não encaminhe 4747.');
+  if (process.env.KODEXA_TUNNEL_HOST !== undefined) {
+    console.log('Cloudflare Tunnel: somente http://127.0.0.1:4748, com Cloudflare Access ativo. Não encaminhe 4747 nem publique portas do Codespaces.');
+  } else {
+    console.log('Encaminhe somente a porta 4748 como Private, protocolo HTTP interno. Não encaminhe 4747.');
+  }
   console.log('Endereço HTTPS esperado: https://' + host);
   const child = spawn(process.execPath, ['dist/server/index.js'], { env, stdio: 'inherit' });
   child.on('error', () => { console.error('Não foi possível iniciar o servidor. Execute npm run build.'); process.exitCode = 1; });
