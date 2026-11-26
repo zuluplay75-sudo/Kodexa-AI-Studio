@@ -3,6 +3,7 @@ import { once } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Script } from 'node:vm';
 import { expect, it, vi } from 'vitest';
 import { createPublicStudio } from './app';
 
@@ -17,6 +18,14 @@ it('isolates authenticated projects, consumes the OAuth flow and revokes session
     if (url === 'https://api.openai.com/v1/responses') {
       expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer private-test-key');
       return Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: 'Pesquisa concluída' }] }] });
+    }
+    if (url === 'https://api.anthropic.com/v1/messages') {
+      expect(new Headers(init?.headers).get('x-api-key')).toBe('private-claude-key');
+      return Response.json({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'Plano Claude' }] });
+    }
+    if (url === 'https://generativelanguage.googleapis.com/v1beta/models/test-gemini:generateContent') {
+      expect(new Headers(init?.headers).get('x-goog-api-key')).toBe('private-gemini-key');
+      return Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'Plano Gemini' }] } }] });
     }
     expect(url).toBe('https://openidconnect.googleapis.com/v1/userinfo');
     return Response.json({ sub: new Headers(init?.headers).get('Authorization')?.slice(7) });
@@ -64,6 +73,12 @@ it('isolates authenticated projects, consumes the OAuth flow and revokes session
   }
 
   try {
+    const page = await request('/public/');
+    expect(await page.text()).toContain('Minhas IAs');
+    expect(page.headers.get('content-security-policy')).toContain("script-src 'self'");
+    const script = await request('/public/studio.js');
+    const source = await script.text();
+    expect(() => new Script(source)).not.toThrow();
     expect((await request('/public/projects')).status).toBe(401);
     const first = await login('first');
     const second = await login('second');
@@ -85,8 +100,12 @@ it('isolates authenticated projects, consumes the OAuth flow and revokes session
     const next = '/public/projects/' + project.id + '/next';
     expect((await post(next, first, {})).status).toBe(409);
     const connected = await post('/public/provider', first, { provider: 'openai', model: 'test-model', key: 'private-test-key' });
-    expect(await connected.json()).toEqual({ provider: 'openai', model: 'test-model' });
-    expect(await (await request('/public/provider', { headers: { Cookie: second } })).json()).toBeNull();
+    expect(await connected.json()).toEqual({ connections: [{ provider: 'openai', model: 'test-model' }], defaultProvider: 'openai', assignments: {} });
+    expect(await (await request('/public/provider', { headers: { Cookie: second } })).json()).toEqual({ connections: [], defaultProvider: null, assignments: {} });
+    expect((await post('/public/provider', first, { provider: 'anthropic', model: 'test-claude', key: 'private-claude-key' })).status).toBe(200);
+    expect((await post('/public/provider', first, { provider: 'gemini', model: 'test-gemini', key: 'private-gemini-key' })).status).toBe(200);
+    expect((await post('/public/provider', first, { assign: true, role: 'manager', provider: 'anthropic' })).status).toBe(200);
+    expect((await post('/public/provider', first, { assign: true, role: 'academy', provider: 'gemini' })).status).toBe(200);
     expect((await post(next, first, {})).status).toBe(202);
     await vi.waitFor(async () => {
       const response = await request('/public/projects', { headers: { Cookie: first } });
@@ -97,6 +116,18 @@ it('isolates authenticated projects, consumes the OAuth flow and revokes session
     const list = (session: string) => request('/public/projects', { headers: { Cookie: session } });
     expect(await (await list(first)).json()).toHaveLength(1);
     expect(await (await list(second)).json()).toEqual([]);
+    for (const provider of ['anthropic', 'gemini']) {
+      expect((await post(next, first, {})).status).toBe(202);
+      await vi.waitFor(async () => {
+        const projects = await (await list(first)).json();
+        expect(projects[0].stages.at(-1).provider).toBe(provider);
+        expect(JSON.stringify(projects)).not.toContain('private-');
+      });
+    }
+    expect((await post(next, second, {})).status).toBe(404);
+    const disconnected = await post('/public/provider', first, { disconnect: true, provider: 'gemini' });
+    expect((await disconnected.json()).assignments).toEqual({ manager: 'anthropic' });
+
     expect((await request('/public/logout', { method: 'POST', headers: { Cookie: first, Origin: origin } })).status).toBe(200);
     expect((await list(first)).status).toBe(401);
   } finally {

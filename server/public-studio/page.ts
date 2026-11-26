@@ -1,3 +1,5 @@
+import { STAGES } from '../../shared/studio-project';
+
 export const publicStudioPage = `<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -10,14 +12,20 @@ export const publicStudioPage = `<!doctype html>
 <a id="login" href="/public/google" hidden>Entrar com Google</a>
 <section id="projects" hidden>
 <button id="logout" type="button">Sair</button>
-<details><summary>Minha IA</summary>
+<details><summary>Minhas IAs</summary>
 <form id="provider">
 <label for="vendor">Provedor</label><select id="vendor"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select>
 <label for="model">Modelo</label><input id="model" required maxlength="101">
 <label for="key">Chave de API</label><input id="key" type="password" autocomplete="off" required maxlength="512">
 <button type="submit">Conectar IA</button>
-<button id="disconnect" type="button" hidden>Desconectar IA</button>
+</form>
 <p id="connection"></p>
+<form id="assignment" hidden>
+<label for="role">Etapa</label><select id="role"><option value="default">Padrão da equipe</option>${STAGES.map(([id, name]) => '<option value="' + id + '">' + name + '</option>').join('')}</select>
+<label for="assigned">IA conectada</label><select id="assigned"></select>
+<button type="submit">Salvar atribuição</button>
+<button id="disconnect" type="button">Desconectar IA selecionada</button>
+<p id="assignments"></p>
 </form></details>
 <form id="create"><label for="brief">Descreva seu projeto</label>
 <textarea id="brief" minlength="10" maxlength="4000" required></textarea>
@@ -53,6 +61,12 @@ const model = document.getElementById('model');
 const key = document.getElementById('key');
 const connection = document.getElementById('connection');
 const disconnect = document.getElementById('disconnect');
+const assignment = document.getElementById('assignment');
+const role = document.getElementById('role');
+const assigned = document.getElementById('assigned');
+const assignments = document.getElementById('assignments');
+const roleNames = ${JSON.stringify(Object.fromEntries(STAGES.map(([id, name]) => [id, name])))};
+const providerNames = { openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini' };
 let polling;
 let drafts = new Map();
 
@@ -68,8 +82,22 @@ async function refreshConnection() {
   const response = await fetch('/public/provider');
   if (!response.ok) return;
   const saved = await response.json();
-  connection.textContent = saved ? 'Conectada: ' + saved.provider + ' · ' + saved.model : 'Conecte sua própria conta de IA.';
-  disconnect.hidden = !saved;
+  connection.textContent = saved.connections.length
+    ? saved.connections.map(item => providerNames[item.provider] + ' · ' + item.model).join(' | ')
+    : 'Conecte sua própria conta de IA.';
+  assignment.hidden = !saved.connections.length;
+  const selection = assigned.value;
+  assigned.replaceChildren(...saved.connections.map(item => {
+    const option = document.createElement('option');
+    option.value = item.provider;
+    option.textContent = providerNames[item.provider];
+    return option;
+  }));
+  if (saved.connections.some(item => item.provider === selection)) assigned.value = selection;
+  assignments.textContent = [
+    'Padrão: ' + (providerNames[saved.defaultProvider] ?? 'sem IA'),
+    ...Object.entries(saved.assignments).map(([id, value]) => roleNames[id] + ': ' + providerNames[value]),
+  ].join(' · ');
 }
 
 provider.addEventListener('submit', async event => {
@@ -81,9 +109,16 @@ provider.addEventListener('submit', async event => {
   } catch (error) { showError(error); }
   finally { key.value = ''; }
 });
+assignment.addEventListener('submit', async event => {
+  event.preventDefault();
+  try {
+    await post('/public/provider', { assign: true, provider: assigned.value, role: role.value });
+    await refreshConnection();
+  } catch (error) { showError(error); }
+});
 disconnect.addEventListener('click', async () => {
   try {
-    await post('/public/provider', { disconnect: true });
+    await post('/public/provider', { disconnect: true, provider: assigned.value });
     await refreshConnection();
   } catch (error) { showError(error); }
 });
@@ -97,7 +132,7 @@ function renderProject(project) {
     const details = document.createElement('details');
     const summary = document.createElement('summary');
     const report = document.createElement('p');
-    summary.textContent = stage.role + ' · ' + stage.provider;
+    summary.textContent = roleNames[stage.role] + ' · ' + (providerNames[stage.provider] ?? stage.provider);
     report.textContent = stage.text;
     details.append(summary, report);
     row.append(details);
@@ -173,7 +208,8 @@ document.getElementById('logout').addEventListener('click', async () => {
     drafts.clear();
     provider.reset();
     connection.textContent = '';
-    disconnect.hidden = true;
+    assignment.hidden = true;
+    assignments.textContent = '';
     create.reset();
     await refresh();
   } catch (error) { showError(error); }

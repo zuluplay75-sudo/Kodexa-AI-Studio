@@ -182,6 +182,7 @@ export class ProjectStudio {
           const result=await (this.options.run??((project,s)=>this.call(project,s,(provider,from)=>{h.provider=provider;h.fallbackFrom=from;this.save();})))(structuredClone(context),stage);
           if(!result.text.trim())throw Error('Empty result');
           const out:ProjectStage={role:stage[0],text:result.text.slice(0,20000),sources:result.sources.slice(0,30),at:new Date().toISOString(),provider:result.provider??h.provider,fallbackFrom:result.fallbackFrom};
+          h.provider=out.provider;
           p.stages.push(out);
           p.stages.sort((a,b)=>STAGES.findIndex(s=>s[0]===a.role)-STAGES.findIndex(s=>s[0]===b.role));
           p.runningRoles=p.runningRoles!.filter(r=>r!==stage[0]);handoffs.get(stage[0])!.state='completed';

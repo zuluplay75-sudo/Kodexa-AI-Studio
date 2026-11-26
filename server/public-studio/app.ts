@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
+import { nextPlanningStages, STAGES, type StudioRole } from '../../shared/studio-project';
 import { parseConnection, plan, type Connection } from './planning';
 import { HttpError, readJson } from '../http/app';
 import { ProjectError, ProjectStudio } from '../studio/projects';
@@ -12,6 +13,20 @@ const loginLifetime = 300;
 const sessionLifetime = 8 * 3600;
 type Flow = { state: string; verifier: string; expires: number };
 type Session = { user: string; expires: number };
+type Provider = Connection['provider'];
+type Preferences = {
+  connections: Map<Provider, Connection>;
+  assignments: Map<StudioRole, Provider>;
+  defaultProvider?: Provider;
+};
+
+function isProvider(value: unknown): value is Provider {
+  return value === 'openai' || value === 'anthropic' || value === 'gemini';
+}
+function connectionFor(prefs: Preferences | undefined, role: StudioRole) {
+  const provider = prefs?.assignments.get(role) ?? prefs?.defaultProvider;
+  return provider && prefs?.connections.get(provider);
+}
 
 function cookie(name: string, value: string, age: number): string {
   return `${name}=${value}; Path=/; Max-Age=${age}; HttpOnly; Secure; SameSite=Lax`;
@@ -50,7 +65,7 @@ export function createPublicStudio(options: {
   const flows = new Map<string, Flow>();
   const sessions = new Map<string, Session>();
   const studios = new Map<string, ProjectStudio>();
-  const connections = new Map<string, Connection>();
+  const preferences = new Map<string, Preferences>();
 
   return createServer((req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -75,7 +90,7 @@ export function createPublicStudio(options: {
     prune(flows, now);
     prune(sessions, now);
     const activeUsers = new Set([...sessions.values()].map(session => session.user));
-    for (const user of connections.keys()) if (!activeUsers.has(user)) connections.delete(user);
+    for (const user of preferences.keys()) if (!activeUsers.has(user)) preferences.delete(user);
     if (method === 'POST' && req.headers.origin !== origin.origin) {
       return json(res, 403, { error: 'Origem não autorizada.' });
     }
@@ -130,21 +145,46 @@ export function createPublicStudio(options: {
     if (!session) return json(res, 401, { error: 'Entre com Google.' });
     if (method === 'POST' && url.pathname === '/public/logout') {
       sessions.delete(sessionId);
-      if (![...sessions.values()].some(other => other.user === session.user)) connections.delete(session.user);
+      if (![...sessions.values()].some(other => other.user === session.user)) preferences.delete(session.user);
       res.setHeader('Set-Cookie', cookie(sessionCookie, '', 0));
       return json(res, 200, { ok: true });
     }
 
     if (url.pathname === '/public/provider') {
+      let prefs = preferences.get(session.user);
       if (method === 'POST') {
-        const body = await readJson(req, 2048) as { disconnect?: unknown } | null;
-        if (body?.disconnect === true) connections.delete(session.user);
-        else connections.set(session.user, parseConnection(body));
+        const body = await readJson(req, 2048) as { provider?: unknown; role?: unknown; disconnect?: unknown; assign?: unknown } | null;
+        if (!sessions.has(sessionId)) return json(res, 401, { error: 'Entre com Google.' });
+        prefs ??= { connections: new Map(), assignments: new Map() };
+        if (body?.disconnect === true) {
+          if (!isProvider(body.provider)) throw new ProjectError(400, 'Selecione a IA a desconectar.');
+          prefs.connections.delete(body.provider);
+          if (prefs.defaultProvider === body.provider) prefs.defaultProvider = undefined;
+          for (const [role, provider] of prefs.assignments) if (provider === body.provider) prefs.assignments.delete(role);
+        } else if (body?.assign === true) {
+          if (!isProvider(body.provider) || !prefs.connections.has(body.provider)) {
+            throw new ProjectError(400, 'Conecte o provedor antes de atribuí-lo.');
+          }
+          if (body.role === 'default') prefs.defaultProvider = body.provider;
+          else {
+            const role = STAGES.find(([id]) => id === body.role)?.[0];
+            if (!role) throw new ProjectError(400, 'Selecione uma etapa válida.');
+            prefs.assignments.set(role, body.provider);
+          }
+        } else {
+          const connection = parseConnection(body);
+          prefs.connections.set(connection.provider, connection);
+          prefs.defaultProvider ??= connection.provider;
+        }
+        preferences.set(session.user, prefs);
       } else if (method !== 'GET') {
         return json(res, 405, { error: 'Método não permitido.' });
       }
-      const configured = connections.get(session.user);
-      return json(res, 200, configured ? { provider: configured.provider, model: configured.model } : null);
+      return json(res, 200, {
+        connections: [...(prefs?.connections.values() ?? [])].map(({ provider, model }) => ({ provider, model })),
+        defaultProvider: prefs?.defaultProvider ?? null,
+        assignments: Object.fromEntries(prefs?.assignments ?? []),
+      });
     }
     if (action ? method !== 'POST' : url.pathname !== '/public/projects' || (method !== 'GET' && method !== 'POST')) {
       return json(res, 405, { error: 'Método não permitido.' });
@@ -156,7 +196,7 @@ export function createPublicStudio(options: {
         dir: join(options.dir, session.user),
         env: {},
         run: (project, stage) => {
-          const connection = connections.get(session.user);
+          const connection = connectionFor(preferences.get(session.user), stage[0]);
           if (!connection) throw new ProjectError(409, 'Conecte sua IA para continuar.');
           return plan(connection, project, stage, options.fetcher);
         },
@@ -165,9 +205,15 @@ export function createPublicStudio(options: {
     }
     if (method === 'GET') return json(res, 200, studio.info().projects);
     const body = await readJson(req, 16 * 1024);
+    if (!sessions.has(sessionId)) return json(res, 401, { error: 'Entre com Google.' });
     if (action?.[2] === 'approve') return json(res, 200, studio.approve(action[1], (body as { decision?: unknown } | null)?.decision));
     if (action?.[2] === 'next') {
-      if (!connections.has(session.user)) throw new ProjectError(409, 'Conecte sua IA para continuar.');
+      const project = studio.info().projects.find(candidate => candidate.id === action[1]);
+      if (!project) throw new ProjectError(404, 'Projeto não encontrado.');
+      const stage = nextPlanningStages(project)[0];
+      if (stage && !connectionFor(preferences.get(session.user), stage[0])) {
+        throw new ProjectError(409, 'Conecte e atribua uma IA para executar esta etapa.');
+      }
       return json(res, 202, studio.launch(action[1]));
     }
     return json(res, 201, studio.create({ brief: (body as { brief?: unknown } | null)?.brief, research: false }));
