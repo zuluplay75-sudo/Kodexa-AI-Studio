@@ -174,6 +174,7 @@ export class ProjectStudio {
     const handoffs=new Map(stages.map(s=>{const h=this.handoff(p,'planning',s[0],p.stages.map(r=>r.role));const selected=this.providers.selected(s[0]);h.provider=selected==='default'?config(this.env).provider:selected;return [s[0],h] as const;}));
     try{this.save();}catch(e){p.state=before;p.error=priorError;p.failedRoles=priorFailed;p.handoffs=previousHandoffs;delete p.runningRoles;this.active=false;throw e;}
     const context=structuredClone(p),failed:StudioRole[]=[];
+    const failures=new Map<StudioRole,string>();
     try{
       await Promise.all(stages.map(async stage=>{
         try{
@@ -185,14 +186,20 @@ export class ProjectStudio {
           p.stages.sort((a,b)=>STAGES.findIndex(s=>s[0]===a.role)-STAGES.findIndex(s=>s[0]===b.role));
           p.runningRoles=p.runningRoles!.filter(r=>r!==stage[0]);handoffs.get(stage[0])!.state='completed';
           try{this.save();}catch(e){p.stages=p.stages.filter(s=>s!==out);throw e;}
-        }catch{
+        }catch(e){
+          // Only expose known, sanitized router diagnostics; never raw API bodies or credentials.
+          const h=handoffs.get(stage[0])!;
+          const message=e instanceof Error?e.message:'';
+          const safe=/^(Gemini HTTP \d{3}|Provedor não configurado\.|Limite diário do Kodexa atingido\.|Não respondeu ou excedeu o tempo limite\.)$/.test(message)?message:'Falha na etapa; confira a conexão e os limites do provedor.';
+          const provider=h.provider==='gemini'?'Gemini':h.provider==='claude-cli'?'Claude':h.provider==='codex-cli'?'Codex':h.provider==='openai'?'OpenAI':h.provider==='anthropic'?'Anthropic':'Provedor padrão';
+          failures.set(stage[0],stage[1]+' ('+provider+'): '+safe);
           p.runningRoles=p.runningRoles!.filter(r=>r!==stage[0]);
           failed.push(stage[0]);p.failedRoles=[...failed];handoffs.get(stage[0])!.state='failed';
           try{this.save();}catch{/* final write retries persistence */}
         }
       }));
       delete p.runningRoles;
-      if(failed.length){p.state='failed';p.error='Uma ou mais etapas falharam. Resultados concluídos foram preservados; execute a equipe restante para retomar.';}
+      if(failed.length){p.state='failed';p.error='Uma ou mais etapas falharam. '+stages.map(s=>failures.get(s[0])).filter(Boolean).join(' | ')+' Resultados concluídos foram preservados; execute a equipe restante para retomar.';}
       else{delete p.failedRoles;p.state=stages[0][0]==='scout'?'approval':p.stages.length===STAGES.length?'complete':'ready';}
       this.save();
     }finally{this.active=false;}
