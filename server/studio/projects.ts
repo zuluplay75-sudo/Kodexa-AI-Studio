@@ -291,10 +291,12 @@ export class ProjectStudio {
     });
     if(!response.ok) throw new Error('Provider error');
     const data=await response.json() as any;
-    if(!anthropic && data.status!=='completed') throw new Error('Provider incomplete');
+    // A partial report must not unlock the next role or be recorded as completed.
+    if(anthropic ? data?.stop_reason!=='end_turn' : data?.status!=='completed') throw new Error('Provider incomplete');
     const parts:any[]=anthropic?(data.content??[]):(data.output??[]).filter((x:any)=>x.type==='message').flatMap((x:any)=>x.content??[]);
     if(web && !(data.output??[]).some((x:any)=>x.type==='web_search_call'&&x.status==='completed')) throw new Error('No web research');
-    const text=parts.filter(x=>x.type===(anthropic?'text':'output_text')).map(x=>x.text).join('\n');
+    const text=parts.filter(x=>x?.type===(anthropic?'text':'output_text')&&typeof x.text==='string').map(x=>x.text).join('\n');
+    if(!text.trim())throw new Error('Provider empty');
     const sources:string[]=[...new Set<string>(parts.flatMap(x=>(x.annotations??[]).filter((a:any)=>a.type==='url_citation'&&typeof a.url==='string'&&/^https?:\/\//.test(a.url)).map((a:any)=>a.url)))];
     return {text,sources,provider:c.provider};
   }
