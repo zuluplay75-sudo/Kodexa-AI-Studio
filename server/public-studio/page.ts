@@ -12,7 +12,11 @@ export const publicStudioPage = `<!doctype html>
 <a id="login" href="/public/google" hidden>Entrar com Google</a>
 <section id="projects" hidden>
 <button id="logout" type="button">Sair</button>
-<details><summary>Minhas IAs</summary>
+<details><summary>Conectar Codex e Claude Code</summary>
+<p>Use o escritório do Kodexa no mesmo computador ou ambiente em que suas sessões do Codex e do Claude Code rodam. O escritório detecta essas sessões depois que você entra nas ferramentas pelo terminal.</p>
+<a href="https://github.com/zuluplay75-sudo/Kodexa-AI-Studio/blob/feat/kodexa-public-studio/docs/kodexa-sessoes-locais.md">Configurar o escritório na minha máquina</a>
+</details>
+<details><summary>Chaves de API para planejamento web</summary>
 <form id="provider">
 <label for="vendor">Provedor</label><select id="vendor"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select>
 <label for="model">Modelo</label><input id="model" required maxlength="101">
@@ -176,8 +180,19 @@ async function refresh() {
   const response = await fetch('/public/projects');
   login.hidden = response.status !== 401;
   projects.hidden = !response.ok;
-  if (response.status === 401) return;
+  if (response.status === 401) {
+    if (Object.hasOwn(loginMessages, loginResult) && new URLSearchParams(location.search).has('login')) {
+      status.textContent = loginMessages[loginResult];
+    }
+    return;
+  }
   if (!response.ok) throw new Error('Não foi possível abrir os projetos.');
+  if (Object.hasOwn(loginMessages, loginResult)) {
+    const cleanUrl = new URL(location.href);
+    cleanUrl.searchParams.delete('login');
+    history.replaceState(null, '', cleanUrl);
+    if (status.textContent === loginMessages[loginResult]) status.textContent = '';
+  }
   const rows = await response.json();
   if (rows.length) list.replaceChildren(...rows.map(renderProject));
   else list.textContent = 'Nenhum projeto criado.';
@@ -220,6 +235,6 @@ const loginMessages = {
   denied: 'O Google não autorizou o login. Tente novamente com uma conta cadastrada para teste.',
   provider: 'O Kodexa não conseguiu confirmar o login com o Google. Tente novamente.',
 };
-if (Object.hasOwn(loginMessages, loginResult)) status.textContent = loginMessages[loginResult];
+
 refresh().then(refreshConnection).catch(showError);
 `;

@@ -82,7 +82,7 @@ it('isolates authenticated projects, consumes the OAuth flow and revokes session
     const health = await request('/public/health');
     expect(await health.json()).toEqual({ status: 'ok' });
     const page = await request('/public/');
-    expect(await page.text()).toContain('Minhas IAs');
+    expect(await page.text()).toContain('Conectar Codex e Claude Code');
     expect(page.headers.get('content-security-policy')).toContain("script-src 'self'");
     const script = await request('/public/studio.js');
     const source = await script.text();
