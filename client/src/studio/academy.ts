@@ -1,3 +1,4 @@
+import { subtitleTranscript } from './subtitles';
 import { STAGES } from '../../../shared/studio-project';
 import { MEDIA_LIMIT,type StudyInfo } from '../../../shared/academy-study';
 function el<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string):HTMLElementTagNameMap[K]{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;}
@@ -18,12 +19,25 @@ export function openAcademy(){
   const source=el('input');source.placeholder='Referência ou link do material';source.maxLength=500;
   const text=el('textarea');text.rows=6;text.maxLength=16000;text.placeholder='Cole artigo ou transcrição autorizada (100–16000 caracteres).';
   const file=el('input');file.type='file';file.accept='.mp3,.mp4,.mpeg,.mpga,.m4a,.wav,.webm';
+  const subtitles=el('input');subtitles.type='file';subtitles.accept='.srt,.vtt,.txt';subtitles.setAttribute('aria-label','Importar legenda ou transcrição');
   const status=el('p');status.setAttribute('role','status');const results=el('div');
   let info:StudyInfo|undefined,busy=false,poll:ReturnType<typeof setInterval>|undefined;
+  subtitles.onchange=async()=>{
+    const f=subtitles.files?.[0];if(!f)return;
+    try{
+      if(f.size>512*1024)throw Error('Legenda maior que 512 KB. Divida o arquivo.');
+      const raw=await f.text();
+      const transcript=/\.txt$/i.test(f.name)?raw.trim():subtitleTranscript(raw);
+      if(transcript.length<100||transcript.length>16000)throw Error('Use 100–16000 caracteres por transcrição.');
+      text.value=transcript;file.value='';if(!source.value.trim())source.value=f.name.slice(0,500);
+      status.textContent='Transcrição importada localmente. Revise antes de enviar.';
+    }catch(e){status.textContent=(e as Error).message;}
+    finally{subtitles.value='';}
+  };
   const go=button('Estudar texto ou mídia',()=>void submit());
   const link=button('Estudar artigo pelo link',()=>void submit(true));
   async function refresh(){try{
-    info=await req<StudyInfo>('');go.disabled=busy||!info.enabled||info.jobs.some(j=>j.state==='running');file.disabled=!info.mediaEnabled||busy;link.disabled=go.disabled;
+    info=await req<StudyInfo>('');go.disabled=busy||!info.enabled||info.jobs.some(j=>j.state==='running');file.disabled=!info.mediaEnabled||busy;subtitles.disabled=!info.enabled||busy;link.disabled=go.disabled;
     results.replaceChildren(el('p',info.enabled?'Academy habilitada.':'Academy ainda não habilitada no servidor.'));
     for(const j of info.jobs.slice(0,8))results.append(el('p',j.source+' — '+({running:'estudando',done:'nota criada',failed:'falhou'}[j.state])+(j.error?' · '+j.error:'')));
     for(const n of info.notes){const detail=el('details');detail.append(el('summary',n.role+' · '+n.source+' (não validado)'),el('pre',n.text));results.append(detail);}
@@ -39,6 +53,6 @@ export function openAcademy(){
     catch(e){status.textContent=(e as Error).message;}
     finally{busy=false;await refresh();}
   }
-  d.append(el('h2','Kodexa Academy'),button('Fechar',()=>d.close()),el('p','Envie um link HTTPS de artigo público, texto, transcrição ou mídia de até 8 MB. A leitura de artigos usa até 16000 caracteres; vídeos são estudados pelo áudio do arquivo autorizado. Links de vídeos não são baixados. As notas ficam disponíveis aos agentes, mas não são automaticamente validadas.'),role,source,link,text,file,go,status,results);
+  d.append(el('h2','Kodexa Academy'),button('Fechar',()=>d.close()),el('p','Envie um link HTTPS de artigo público, texto, transcrição ou mídia de até 8 MB. A leitura de artigos usa até 16000 caracteres; vídeos são estudados pelo áudio do arquivo autorizado. Links de vídeos não são baixados. As notas ficam disponíveis aos agentes, mas não são automaticamente validadas.'),role,source,link,text,el('p','Importar legenda SRT, VTT ou TXT (até 512 KB)'),subtitles,file,go,status,results);
   document.body.append(d);d.addEventListener('close',()=>{if(poll)clearInterval(poll);d.remove();});d.showModal();void refresh();poll=setInterval(()=>{if(!busy&&info?.jobs.some(j=>j.state==='running'))void refresh();},3000);
 }
