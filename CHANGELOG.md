@@ -10,6 +10,8 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+- O cartão do Codex atualiza as cotas também quando uma sessão rápida termina entre ciclos de leitura.
+
 - O totem da entrada do escritório exibe a marca KX.
 
 - O escritório exibe os nomes e cargos salvos em Configurar estúdio. A prévia mantém visível uma falha ao iniciar o aplicativo e só oferece a abertura de uma porta manual após o preenchimento.

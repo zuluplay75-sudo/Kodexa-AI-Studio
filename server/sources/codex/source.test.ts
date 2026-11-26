@@ -398,6 +398,19 @@ describe('fonte do Codex: uso do plano', () => {
     expect(ctx.accounts.list(new Map())[0]).toMatchObject({ plan: 'Plus', usageStatus: 'stale', usage: { fetchedAt: at } });
   });
 
+  it('atualiza a cota quando uma sessão termina entre ciclos sem deixar lock', () => {
+    const ctx = setup();
+    const old = ctx.now() - 60_000;
+    ctx.home.rollout(T, [R.meta(T, { at: old }), R.tokens({ input: 1, output: 1, at: old, rateLimits: { primary: { used: 30 } } })], { mtime: old });
+    ctx.source.boot();
+    ctx.advance(5_000);
+    const at = ctx.now();
+    ctx.home.rollout(C, [R.meta(C, { at }), R.tokens({ input: 1, output: 1, at, rateLimits: { primary: { used: 61 } } })], { mtime: at });
+    ctx.poll();
+    expect(ctx.agents()).toEqual([]);
+    expect(ctx.accounts.list(new Map())[0].usage).toMatchObject({ fetchedAt: at, fiveHour: { utilization: 61 } });
+  });
+
   it('conta sem sessão aberta: pula o rollout mais recente sem números e acha o uso numa pasta de data antiga', () => {
     const ctx = setup();
     const at = ctx.now() - 5 * 3600_000;
