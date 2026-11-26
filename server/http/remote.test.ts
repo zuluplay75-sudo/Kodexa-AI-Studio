@@ -80,6 +80,17 @@ describe('Kodexa Codespaces login', () => {
     expect(result.config).toMatchObject({ host: '127.0.0.1', port: 4748, codespaceProxyHost: 'my-space-4748.app.github.dev' });
     expect(result.config?.tls).toBeUndefined();
   });
+  it('allows an explicit tunnel hostname only on the authenticated loopback listener', () => {
+    const custom = parseRemoteConfig({...env,KODEXA_TUNNEL_HOST:'kodexaia.com.br'},false,()=>false).config;
+    expect(custom).toMatchObject({host:'127.0.0.1',port:4748,codespaceProxyHost:'kodexaia.com.br'});
+    expect(custom?.tls).toBeUndefined();
+    expect(parseRemoteConfig({...env,KODEXA_TUNNEL_HOST:'kodexaia.com.br',CODESPACES:'false'},false).config).toBeUndefined();
+  });
+  it('rejects malformed or local custom tunnel hostnames instead of falling back silently', () => {
+    for(const host of ['', 'https://kodexaia.com.br', 'kodexaia.com.br:4748', '*.com.br', '127.0.0.1', 'foo.localhost', 'a..com.br', '-a.com.br']){
+      expect(parseRemoteConfig({...env,KODEXA_TUNNEL_HOST:host},false).config).toBeUndefined();
+    }
+  });
   it('rejects non-Codespaces, invalid proxy domain and Docker launch', () => {
     expect(parseRemoteConfig({ ...env, CODESPACES: 'false' }, false).config).toBeUndefined();
     expect(parseRemoteConfig({ ...env, GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: 'example.com' }, false).config).toBeUndefined();
