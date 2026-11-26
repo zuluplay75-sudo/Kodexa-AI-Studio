@@ -14,7 +14,7 @@ export const publicStudioPage = `<!doctype html>
 <button id="logout" type="button">Sair</button>
 <details><summary>Conectar Codex e Claude Code</summary>
 <p>Use o escritório do Kodexa no mesmo computador ou ambiente em que suas sessões do Codex e do Claude Code rodam. O escritório detecta essas sessões depois que você entra nas ferramentas pelo terminal.</p>
-<a href="https://github.com/zuluplay75-sudo/Kodexa-AI-Studio/blob/feat/kodexa-public-studio/docs/kodexa-sessoes-locais.md">Configurar o escritório na minha máquina</a>
+<p><a href="http://127.0.0.1:4747/">Abrir escritório neste computador</a></p><p>No celular, use o acesso remoto da sua instalação. O responsável pelo Codespace do Kodexa pode entrar com usuário e senha.</p><p><a href="https://kodexa.ia.br/login">Abrir escritório do responsável</a></p>
 </details>
 <details><summary>Chaves de API para planejamento web</summary>
 <form id="provider">
