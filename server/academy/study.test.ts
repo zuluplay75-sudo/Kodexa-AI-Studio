@@ -30,6 +30,17 @@ describe('Academy manual study',()=>{
     expect(readArticle).toHaveBeenCalledWith('https://docs.godotengine.org/');
     expect(study).toHaveBeenCalledWith(expect.anything(),'dev','https://docs.godotengine.org/','artigo '.repeat(20));
   });
+  it('accepts authorized public YouTube videos through Gemini without article or audio API',async()=>{
+    const fetcher=vi.fn<typeof fetch>(async()=>Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'Nota audiovisual de teste'}]}}]}));
+    const s=new AcademyStudy({dir:dir(),env:{KODEXA_ACADEMY_VIDEO:'1',GEMINI_API_KEY:'fake'},fetcher});
+    const input={role:'dev',videoProvider:'gemini',link:'https://youtu.be/abcdefghijk'};
+    expect(()=>s.launch(input)).toThrow();
+    expect(()=>s.launch({...input,link:'https://example.com/video',approved:true})).toThrow();
+    expect(s.launch({...input,approved:true})).toMatchObject({kind:'video',videoProvider:'gemini',source:'https://www.youtube.com/watch?v=abcdefghijk'});
+    await vi.waitFor(()=>expect(s.info().jobs[0].state).toBe('done'));
+    expect(s.info().notes[0]).toMatchObject({kind:'video',role:'dev',validated:false});
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
   it('passes only bounded notes for the requested role, as unvalidated',()=>{
     const d=dir();writeFileSync(join(d,'state.json'),JSON.stringify({notes:[note,{...note,role:'qa',text:'Other'}]}));
     expect(knowledgeFor(d,'dev')).toEqual([{source:'Manual',text:'Nota de teste',validated:false}]);
