@@ -61,6 +61,13 @@ export function discoverCodexDirs(env: NodeJS.ProcessEnv = process.env, home: st
   const found: string[] = [];
   const main = defaultCodexHome(env, home);
   if (isCodexHome(main)) found.push(main);
+  // O executor do Kodexa usa uma conta dedicada, normalmente ~/.kodexa-codex,
+  // que não corresponde ao prefixo original .codex. Respeita o override explícito acima.
+  const dedicated = env.KODEXA_EXEC_CODEX_HOME?.trim();
+  if (dedicated) {
+    const dir = expandHome(dedicated, home);
+    if (isCodexHome(dir)) found.push(dir);
+  }
   try {
     for (const ent of readdirSync(home, { withFileTypes: true })) {
       if (!ent.name.startsWith('.codex')) continue;

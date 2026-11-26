@@ -8,6 +8,7 @@
 // a idade ("há 12 min") fica sempre à mostra. Sem cota nem créditos ("sem cota") nunca vira 0%. Não há o que
 // instalar para o uso: "Como funciona" abre a ajuda na seção do Codex. Sem Opus/Sonnet nem e-mail (só o plano).
 import type { AccountInfo } from '../../../shared/types';
+import type { RoutingInfo, ManagedAI } from '../../../shared/studio-project';
 import type { UiContext } from './context';
 import { h, KeyedList, setAttr, setHidden, setStyleVar, setText, setTitle, setVariant } from './dom';
 import { FIVE_HOURS_MS, relativeTime, usageLevel, usageWindowView, WEEK_MS, type UsageWindowView } from './format';
@@ -205,6 +206,12 @@ export class UsageCards {
   readonly el: HTMLElement;
   private list: KeyedList<AccountInfo>;
   private refs = new WeakMap<HTMLElement, CardRefs>();
+  private studioCard?: HTMLElement;
+  private studioReading?: RoutingInfo;
+  private studioUnavailable=false;
+  private studioLoading=false;
+  private studioFetchedAt=0;
+  private readonly studioLabels:Record<ManagedAI,string>={'codex-cli':'Codex','claude-cli':'Claude',gemini:'Gemini'};
 
   constructor(private ctx: UiContext) {
     this.el = h('div', { class: 'ui-usage', role: 'group', attrs: { 'aria-label': tr('Uso por conta') } });
@@ -215,19 +222,58 @@ export class UsageCards {
     });
     // A largura da janela mudou: refaz a conta de cabem-ou-não (ver fit()).
     if (typeof ResizeObserver === 'function') new ResizeObserver(() => this.fit()).observe(ctx.root);
+    // Não afeta replay/mock; a API autenticada retorna somente contadores e status, nunca chaves.
+    if (!new URLSearchParams(location.search).has('mock')) {
+      void this.refreshStudioUsage();
+      setInterval(()=>{if(document.visibilityState!=='hidden')void this.refreshStudioUsage();},15000);
+      document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void this.refreshStudioUsage();});
+    }
   }
 
   render(): void {
     const accounts = this.ctx.store.snapshot?.accounts ?? [];
     this.list.sync(accounts);
-    this.el.classList.toggle('is-empty', accounts.length === 0);
-    setStyleVar(this.el, '--count', String(accounts.length));
+    if(this.studioCard&&this.el.lastElementChild!==this.studioCard)this.el.append(this.studioCard);
+    const count=accounts.length+(this.studioCard?1:0);
+    this.el.classList.toggle('is-empty', count === 0);
+    setStyleVar(this.el, '--count', String(count));
     // Medir força o layout da página, e o render roda a cada quadro no replay: só quando as contas mudam (a largura da
     // janela fica com o ResizeObserver do construtor).
-    const key = accounts.map((a) => a.id).join('|');
+    const key = accounts.map((a) => a.id).join('|')+(this.studioCard?'|kodexa-planning':'');
     if (key !== this.fitKey) {
       this.fitKey = key;
       this.fit();
+    }
+  }
+
+  private async refreshStudioUsage():Promise<void>{
+    if(this.studioLoading)return;
+    this.studioLoading=true;
+    try{
+      const r=await fetch('/api/studio/providers',{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(8000)});
+      if(!r.ok)throw Error('indisponível');
+      const info=await r.json() as RoutingInfo;
+      if(!Array.isArray(info.providers)||!Number.isInteger(info.routing?.dailyLimit))throw Error('resposta inválida');
+      this.studioReading=info;this.studioUnavailable=false;this.studioFetchedAt=Date.now();
+    }catch{
+      this.studioUnavailable=true;
+    }finally{
+      this.studioLoading=false;
+      if(this.studioReading){
+        if(!this.studioCard){
+          this.studioCard=h('div',{class:'ui-usage-card kodexa-planning-usage',tabIndex:0,attrs:{'aria-label':'Chamadas internas de planejamento do Kodexa'}});
+        }
+        const info=this.studioReading;
+        const rows=info.providers.map(p=>{
+          const label=this.studioLabels[p.id];
+          const n=this.studioUnavailable?'—':p.configured?String(p.calls)+'/'+info.routing.dailyLimit:'não configurado';
+          return h('div',{class:'kodexa-planning-usage__row',attrs:{title:label+': '+(this.studioUnavailable?'Dados indisponíveis':p.message)}},h('span',{text:label}),h('strong',{text:n}));
+        });
+        const description='Chamadas de planejamento e testes de conexão registradas pelo Kodexa, incluindo tentativas com falha; limite diário interno UTC. Não representa tokens, custos nem a cota da assinatura. Não inclui execução de código ou sessões externas.';
+        this.studioCard.title=description+(this.studioUnavailable?' Dados indisponíveis.':' Última leitura: '+new Date(this.studioFetchedAt).toLocaleTimeString());
+        this.studioCard.replaceChildren(h('div',{class:'kodexa-planning-usage__title',text:'Kodexa · chamadas/dia UTC'}),...rows);
+        this.render();
+      }
     }
   }
 

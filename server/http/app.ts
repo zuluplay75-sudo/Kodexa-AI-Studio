@@ -355,7 +355,8 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
       if (path === '/api/studio' && method === 'GET') {sendJson(res,200,studio.info());return true;}
       if(path==='/api/studio/providers'||path==='/api/studio/providers/test'){
         if(!trusted(req,'spawn')){req.resume();sendJson(res,403,{error:'Configuração não autorizada.'});return true;}
-        if(method!=='POST'){methodNotAllowed(res,'POST');return true;}
+        if(path==='/api/studio/providers'&&method==='GET'){sendJson(res,200,studio.providerInfo());return true;}
+        if(method!=='POST'){methodNotAllowed(res,path.endsWith('/test')?'POST':'GET, POST');return true;}
         void readJson(req).then(async body=>sendJson(res,200,path.endsWith('/test')?await studio.testProvider(body):studio.configureProviders(body))).catch(err=>{if(err instanceof ProjectError)sendJson(res,err.status,{error:err.message});else fail(res,err);});return true;
       }
       const archive=/^\/api\/studio\/projects\/([a-f0-9-]+)\/archive$/.exec(path);

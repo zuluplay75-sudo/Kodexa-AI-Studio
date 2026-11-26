@@ -74,6 +74,7 @@ export class ProjectStudio {
     const c = config(this.env);
     return { configured: (c.provider==='codex-cli'?!!this.planner:c.configured)||this.providers.info().providers.some(x=>x.configured), routing:this.providers.info(), provider: c.provider, executionAvailable:!!this.execute, webResearch: c.configured && c.provider === 'openai' && this.providers.selected('scout')==='default', projects: structuredClone(this.projects) };
   }
+  providerInfo(){return this.providers.info();}
   configureProviders(raw:unknown){
     if(this.active)throw new ProjectError(409,'Aguarde a equipe antes de alterar os provedores.');
     try{const out=this.providers.configure(raw);this.options.onChange?.(this.info());return out;}catch{throw new ProjectError(400,'Configuração de provedores inválida ou indisponível.');}
