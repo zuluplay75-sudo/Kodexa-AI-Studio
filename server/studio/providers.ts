@@ -17,6 +17,12 @@ export function validateRouting(raw:unknown):StudioRouting{
 export function claudePlanningArgs(prompt:string):string[]{
  return ['-p','--safe-mode','--tools','','--disallowedTools','*','--strict-mcp-config','--mcp-config','{"mcpServers":{}}','--no-session-persistence','--output-format','json','--',prompt];
 }
+/** Claude print-mode JSON must describe a successful completed turn, not a partial/error result. */
+export function claudePlanningText(out:string):string{
+ const result=JSON.parse(out) as {type?:unknown;subtype?:unknown;is_error?:unknown;result?:unknown;stop_reason?:unknown}|null;
+ if(result?.type!=='result'||result.subtype!=='success'||result.is_error!==false||typeof result.result!=='string'||!result.result.trim()||(result.stop_reason!=null&&result.stop_reason!=='end_turn'))throw Error('Claude não retornou texto válido.');
+ return result.result;
+}
 type Usage={day:string;counts:Record<ManagedAI,number>};
 const blankUsage=():Usage=>({day:new Date().toISOString().slice(0,10),counts:{'codex-cli':0,'claude-cli':0,gemini:0}});
 export class ProviderRouter{
@@ -57,7 +63,8 @@ export class ProviderRouter{
   if(!this.configured(id))reject('Provedor não configurado.');
   this.rollover();
   if(this.usage.counts[id]>=this.routing.dailyLimit)reject('Limite diário do Kodexa atingido.');
-  this.usage.counts[id]++;this.save(); // reserve before concurrent calls; failed attempts count too
+  this.usage.counts[id]++; // reserve before concurrent calls; failed attempts count too
+  try{this.save();}catch{this.usage.counts[id]--;reject('Não foi possível salvar o limite de uso.');}
   try{
    let text:string;
    if(id==='codex-cli')text=await this.codex!(workspace,system+'\n'+input);
@@ -67,7 +74,7 @@ export class ProviderRouter{
      if(this.env.CLAUDE_CONFIG_DIR)env.CLAUDE_CONFIG_DIR=this.env.CLAUDE_CONFIG_DIR;
      const child=execFile(this.claude!,claudePlanningArgs(system+'\n'+input),{cwd:workspace,env,timeout:120000,killSignal:'SIGKILL',maxBuffer:1024*1024,encoding:'utf8'},(err,out)=>{
       if(err)return fail(Error('Claude não respondeu.'));
-      try{const result=JSON.parse(out);if(result.is_error||typeof result.result!=='string')throw Error();ok(result.result);}catch{fail(Error('Claude não retornou texto válido.'));}
+      try{ok(claudePlanningText(out));}catch{fail(Error('Claude não retornou texto válido.'));}
      });child.stdin?.end();
     });
    }else{
