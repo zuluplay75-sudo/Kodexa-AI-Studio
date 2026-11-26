@@ -101,7 +101,9 @@ async function summarize(fetcher: Fetcher, env: NodeJS.ProcessEnv, role: Role, s
     body: JSON.stringify(anthropic ? { model: env.KODEXA_ACADEMY_MODEL, max_tokens: 1200, system, messages: [{role:'user',content:input}] } : { model: env.KODEXA_ACADEMY_MODEL, max_completion_tokens: 1200, messages: [{role:'system',content:system},{role:'user',content:input}] }),
   });
   const data = JSON.parse(await limitedText(response, 256 * 1024));
-  const text = anthropic ? data.content?.filter((x: {type?: string}) => x.type === 'text').map((x: {text?: string}) => x.text).join('\n') : data.choices?.[0]?.message?.content;
+  // Never save a truncated/refused summary as knowledge for other agents.
+  if (anthropic ? data?.stop_reason !== 'end_turn' : data?.choices?.[0]?.finish_reason !== 'stop') throw new Error('incomplete model output');
+  const text = anthropic ? data.content?.filter((x: {type?: string; text?: unknown}) => x?.type === 'text' && typeof x.text === 'string').map((x: {text: string}) => x.text).join('\n') : data.choices?.[0]?.message?.content;
   if (typeof text !== 'string' || !text.trim()) throw new Error('empty model output');
   return text.trim().slice(0, MAX_NOTE);
 }
