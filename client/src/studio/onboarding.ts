@@ -36,7 +36,8 @@ function select<T extends string>(options: ReadonlyArray<readonly [T,string]>, v
 const providers: ReadonlyArray<readonly [Provider,string]> = [['unconfigured','Configurar depois'],['claude','Claude Code'],['codex','Codex'],['gemini','Gemini API']];
 const themes: ReadonlyArray<readonly [StudioPrefs['theme'],string]> = [['pixel','Pixel clássico · dourado e verde'],['midnight','Meia-noite · azul e violeta'],['ocean','Oceano · azul e ciano'],['graphite','Grafite · neutro']];
 
-export function mountStudioSetup(): void {
+export function mountStudioSetup(onMembersChanged: (members: Member[]) => void): void {
+  onMembersChanged(readPrefs()?.members ?? []);
   if (document.getElementById('kodexa-setup-launch')) return;
   const launch = button('Configurar estúdio',open);
   launch.id = 'kodexa-setup-launch';
@@ -141,6 +142,7 @@ export function mountStudioSetup(): void {
       }
       if(routing)for(const m of draft.members){const role=studioRole(m.id);if(role)m.provider=localProvider(routing.roles[role]);}
       if(!savePrefs(draft)){status.textContent='Não foi possível salvar as preferências do navegador. A configuração de IAs do servidor não foi revertida.';return;}
+      onMembersChanged(draft.members);
       dialog.close();
     }
     dialog.replaceChildren(title,description,form);redraw();dialog.showModal();void loadRouting();

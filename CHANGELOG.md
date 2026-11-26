@@ -10,6 +10,8 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+- O escritório exibe os nomes e cargos salvos em Configurar estúdio. A prévia mantém visível uma falha ao iniciar o aplicativo e só oferece a abertura de uma porta manual após o preenchimento.
+
 - A prévia do Studio oferece o link da porta privada do Codespaces também ao abrir o Kodexa por um domínio próprio.
 
 ## [1.0.3] - 2026-10-16

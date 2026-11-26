@@ -209,7 +209,7 @@ export class OfficeStore {
   pushReplay(snap: OfficeSnapshot): void {
     if (!this.replay) {
       this.replay = true;
-      this.live = this.snapshot ? { snap: this.snapshot, at: Date.now() } : null;
+      this.live = this.snapshot && this.sourceSnapshot ? { snap: this.sourceSnapshot, at: Date.now() } : null;
     }
     this.setSnapshot(snap);
   }
@@ -383,7 +383,22 @@ export class OfficeStore {
     this.checkBuild(snap.meta.build);
   }
 
+  private sourceSnapshot: OfficeSnapshot | null = null;
+  private studioLabels = new Map<string, { name: string; role: string }>();
+
+  setStudioLabels(members: readonly { id: string; name: string; role: string }[]): void {
+    this.studioLabels = new Map(members.map((member) => [member.id, member]));
+    if (this.snapshot && this.sourceSnapshot) this.setSnapshot(this.sourceSnapshot);
+  }
+
   private setSnapshot(snap: OfficeSnapshot): void {
+    this.sourceSnapshot = snap;
+    if (this.studioLabels.size) {
+      snap = { ...snap, agents: snap.agents.map((agent) => {
+        const label = agent.managed && this.studioLabels.get(agent.managed.role);
+        return label ? { ...agent, name: label.name, role: label.role } : agent;
+      }) };
+    }
     this.snapshot = snap;
     this.agentIndex = new Map(snap.agents.map((a) => [a.id, a]));
     this.roomIndex = new Map(snap.rooms.map((r) => [r.id, r]));

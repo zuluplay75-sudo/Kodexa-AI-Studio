@@ -22,7 +22,7 @@ export function openProjectPreview(p:StudioProject){
   let data:StudioPreview|undefined,scripts=false,closed=false;
   function render(){if(!data||closed)return;frame.setAttribute('sandbox',scripts?'allow-scripts':'');frame.srcdoc=previewDocument(data.html,scripts);frame.hidden=false;status.textContent='Arquivo: '+data.entry+' · '+(scripts?'JavaScript local autorizado; API e recursos externos bloqueados.':'Visualização estática, sem JavaScript.');}
   const toggle=button('Ativar JavaScript local',()=>{if(!scripts&&!confirm('Execute apenas código revisado e confiável. A prévia fica em uma origem isolada e não deve receber dados reais. A sandbox não é uma máquina virtual. Continuar?'))return;scripts=!scripts;toggle.textContent=scripts?'Desativar JavaScript':'Ativar JavaScript local';render();});toggle.disabled=true;
-  const port=node('input');port.type='number';port.min='1024';port.max='65535';port.value='8000';port.setAttribute('aria-label','Porta privada do aplicativo');
+  const port=node('input');port.type='number';port.min='1024';port.max='65535';port.value='';port.setAttribute('aria-label','Porta privada do aplicativo');
   const link=node('a','Abrir versão completa do aplicativo');link.target='_blank';link.rel='noopener noreferrer';link.hidden=true;
   const hint=node('p','Se a prévia ficar em Carregando, a interface provavelmente depende de uma API. Abra a versão completa pela porta privada abaixo, após iniciar o servidor conforme o README. A prévia HTML não executa o backend.');
   let codespaceOrigin=location.origin;
@@ -34,14 +34,15 @@ export function openProjectPreview(p:StudioProject){
   const stop=button('Parar aplicativo',()=>void runtimeAction('stop'));
   const open=node('a','Abrir aplicativo online');open.target='_blank';open.rel='noopener noreferrer';open.hidden=true;
   let runtimeBusy=false;
+  let runtimeError: string | undefined;
   const runtimeBase='/api/studio/projects/'+encodeURIComponent(p.id)+'/runtime';
   async function runtimeRequest(action?:'start'|'stop'){
     const response=await fetch(runtimeBase+(action?'/'+action:''),{credentials:'same-origin',cache:'no-store',...(action?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({approved:true})}:{})});
     const result=await response.json();if(!response.ok)throw Error(result.error??'Servidor indisponível.');return result as StudioRuntime;
   }
-  function showRuntime(r:StudioRuntime){if(closed)return;codespaceOrigin=r.codespaceOrigin??location.origin;updateLink();runtimeStatus.textContent=r.message;start.disabled=runtimeBusy||!r.available||r.state!=='stopped';stop.disabled=runtimeBusy||!['starting','running'].includes(r.state);const url=r.state==='running'&&r.port?privatePortUrl(codespaceOrigin,r.port):undefined;if(url){open.href=url;open.hidden=false;}else{open.hidden=true;open.removeAttribute('href');}}
+  function showRuntime(r:StudioRuntime){if(closed)return;codespaceOrigin=r.codespaceOrigin??location.origin;updateLink();runtimeStatus.textContent=runtimeError??r.message;start.disabled=runtimeBusy||!r.available||r.state!=='stopped';stop.disabled=runtimeBusy||!['starting','running'].includes(r.state);const url=r.state==='running'&&r.port?privatePortUrl(codespaceOrigin,r.port):undefined;if(url){open.href=url;open.hidden=false;}else{open.hidden=true;open.removeAttribute('href');}}
   async function refreshRuntime(){if(closed||runtimeBusy)return;try{showRuntime(await runtimeRequest());}catch(e){if(!closed)runtimeStatus.textContent=(e as Error).message;}}
-  async function runtimeAction(action:'start'|'stop'){if(runtimeBusy)return;runtimeBusy=true;start.disabled=true;stop.disabled=true;runtimeStatus.textContent=action==='start'?'Iniciando servidor…':'Parando servidor…';try{const result=await runtimeRequest(action);runtimeBusy=false;showRuntime(result);}catch(e){runtimeBusy=false;if(!closed){runtimeStatus.textContent=(e as Error).message;start.disabled=false;}}}
+  async function runtimeAction(action:'start'|'stop'){if(runtimeBusy)return;runtimeError=undefined;runtimeBusy=true;start.disabled=true;stop.disabled=true;runtimeStatus.textContent=action==='start'?'Iniciando servidor…':'Parando servidor…';try{const result=await runtimeRequest(action);runtimeBusy=false;showRuntime(result);}catch(e){runtimeBusy=false;if(!closed){runtimeError=(e as Error).message;runtimeStatus.textContent=runtimeError;await refreshRuntime();}}}
   start.disabled=true;stop.disabled=true;runtimePanel.append(node('h3','Servidor de demonstração'),runtimeStatus,start,stop,open,node('p','A execução usa somente a versão verificada do Oficina em Dia, uma cópia descartável e a porta privada 8010. A sessão é encerrada após uma hora. Outros backends ainda exigem o README.'));
   const poll=setInterval(()=>void refreshRuntime(),2500);
   const close=button('Fechar prévia',()=>dialog.close());
