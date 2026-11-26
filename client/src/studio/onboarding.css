@@ -24,3 +24,6 @@
 #kodexa-setup h1 img{display:block;max-width:100%;height:auto;margin:0 auto 12px}
 #kodexa-setup[data-theme=pixel] fieldset{border-color:#62776f;box-shadow:0 3px 0 #121c28}
 #kodexa-setup[data-theme=pixel] button.kodexa-primary{box-shadow:inset 0 -3px 0 #0003}
+
+#kodexa-setup .kodexa-routing{border-top:1px solid #65708b;margin-top:18px;padding-top:4px}
+#kodexa-setup input[type=checkbox]{width:auto;justify-self:start;min-width:18px;min-height:18px}

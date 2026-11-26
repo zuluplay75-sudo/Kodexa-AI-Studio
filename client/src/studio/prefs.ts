@@ -9,7 +9,7 @@ export const TEAM = [
   ['qa','Kodexa QA','Testes e qualidade'],
   ['shield','Kodexa Shield','Segurança cibernética'],
 ] as const;
-export type Provider = 'unconfigured' | 'claude' | 'codex';
+export type Provider = 'unconfigured' | 'claude' | 'codex' | 'gemini';
 export type Member = { id: string; name: string; role: string; provider: Provider };
 export type StudioPrefs = { schema: 1; company: string; theme: 'pixel' | 'midnight' | 'ocean' | 'graphite'; members: Member[] };
 const KEY = 'kodexa.studio.preferences.v1';
@@ -22,7 +22,7 @@ export function parsePrefs(raw: string | null): StudioPrefs | null {
     if (!p || p.schema !== 1 || typeof p.company !== 'string' || !p.company.trim() || p.company.length > 80 || !['pixel','midnight','ocean','graphite'].includes(p.theme) || !Array.isArray(p.members) || p.members.length > 32) return null;
     const ids = new Set<string>();
     for (const m of p.members) {
-      if (!m || typeof m.id !== 'string' || !m.id || m.id.length > 80 || ids.has(m.id) || typeof m.name !== 'string' || !m.name.trim() || m.name.length > 80 || typeof m.role !== 'string' || !m.role.trim() || m.role.length > 120 || !['unconfigured','claude','codex'].includes(m.provider)) return null;
+      if (!m || typeof m.id !== 'string' || !m.id || m.id.length > 80 || ids.has(m.id) || typeof m.name !== 'string' || !m.name.trim() || m.name.length > 80 || typeof m.role !== 'string' || !m.role.trim() || m.role.length > 120 || !['unconfigured','claude','codex','gemini'].includes(m.provider)) return null;
       ids.add(m.id);
     }
     return p;

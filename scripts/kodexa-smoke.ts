@@ -27,6 +27,7 @@ try{
   assert.equal((await call(4747,'/api/studio')).status,403);
   assert.equal((await call(4748,'/api/studio')).status,401);
   assert.equal((await call(4748,'/api/studio/academy')).status,401);
+  assert.equal((await call(4748,'/api/studio/providers',{body:{}})).status,401);
   assert.match((await call(4748,'/login')).body,/Kodexa AI Studio/);
   const login=await call(4748,'/api/remote/login',{body:{user:'smoke',password}});
   assert.equal(login.status,200);
@@ -35,6 +36,12 @@ try{
   const studio=await call(4748,'/api/studio',{cookie});assert.equal(studio.status,200);assert.equal(JSON.parse(studio.body).configured,false);
   assert.equal((await call(4748,'/api/studio/academy',{cookie})).status,200);
   const project=await call(4748,'/api/studio/projects',{cookie,body:{brief:'Projeto de teste automatizado',research:false}});assert.equal(project.status,201);
+  const before=JSON.parse(studio.body).routing.routing;
+  const routing={...before,roles:{...before.roles,scout:'gemini',manager:'claude-cli'},fallback:false};
+  const configured=await call(4748,'/api/studio/providers',{cookie,body:routing});assert.equal(configured.status,200);
+  const reloaded=JSON.parse((await call(4748,'/api/studio',{cookie})).body);
+  assert.deepEqual(reloaded.routing.routing,routing);
+  assert.equal(reloaded.projects[0].id,JSON.parse(project.body).id);
   assert.equal((await call(4748,'/api/remote/logout',{cookie,body:{}})).status,200);
   assert.equal((await call(4748,'/api/studio',{cookie})).status,401);
   console.log('Kodexa production smoke: login, protected routes, project persistence API and logout passed.');

@@ -212,6 +212,13 @@ export class SettingsPopover implements UiComponent {
         h('h3', { text: tr('Avisos') }),
         sw('browserNotifications', tr('Notificações do navegador'), tr('Avisa quando alguém precisa de você e a aba está em segundo plano.'), () => void this.toggleNotifications()),
       ),
+      ...(!new URLSearchParams(location.search).has('mock') ? [h('div', { class: 'ui-set-group' },
+        h('h3', { text: 'Equipe Kodexa' }),
+        h('button', { class: 'ui-btn', type: 'button', text: 'Configurar equipe e IAs', on: { click: () => {
+          const launch = document.getElementById('kodexa-setup-launch');
+          if (launch) { this.hide(); launch.click(); }
+        } } }),
+      )] : []),
       this.soundGroup.el,
       h('div', { class: 'ui-set-group' }, h('h3', { text: tr('Idioma') }), this.language.row),
       this.demoGroup,

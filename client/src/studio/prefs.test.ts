@@ -13,6 +13,8 @@ describe('studio preferences',()=>{
     expect(parsePrefs(JSON.stringify({...base(),members:[]}))?.members).toHaveLength(0);
     const p=base();p.members[0].provider='codex';p.members[0].name='Pesquisa';
     expect(parsePrefs(JSON.stringify(p))?.members[0].provider).toBe('codex');
+    p.members[0].provider='gemini';
+    expect(parsePrefs(JSON.stringify(p))?.members[0].provider).toBe('gemini');
   });
   it('rejects invalid, duplicate and oversized entries',()=>{
     expect(parsePrefs('invalid')).toBeNull();
