@@ -53,9 +53,10 @@ export class ProviderRouter{
   })};
  }
  async call(id:ManagedAI,workspace:string,system:string,input:string):Promise<string>{
-  if(!this.configured(id))throw Error('Provedor não configurado.');
+  const reject=(message:string):never=>{this.status.set(id,{state:'failed',message,at:new Date().toISOString()});throw Error(message);};
+  if(!this.configured(id))reject('Provedor não configurado.');
   this.rollover();
-  if(this.usage.counts[id]>=this.routing.dailyLimit)throw Error('Limite diário do Kodexa atingido.');
+  if(this.usage.counts[id]>=this.routing.dailyLimit)reject('Limite diário do Kodexa atingido.');
   this.usage.counts[id]++;this.save(); // reserve before concurrent calls; failed attempts count too
   try{
    let text:string;

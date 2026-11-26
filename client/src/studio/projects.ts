@@ -20,7 +20,7 @@ export function mountProjects(){
   let poll:ReturnType<typeof setInterval>|undefined;
   launch.addEventListener('click',()=>{if(!poll)poll=setInterval(()=>{if(!busy && info?.projects.some(p=>p.state==='running'||p.delivery?.state==='running'))void refresh();},2500);});
   dialog.addEventListener('close',()=>{if(poll)clearInterval(poll);poll=undefined;});
-  let selected='',busy=false,info:StudioInfo|undefined,selectionInitialized=false;
+  let selected='',busy=false,info:StudioInfo|undefined,selectionInitialized=false,providersExpanded=false;
   const heading=el('h2','Projetos Kodexa'),content=el('div'),status=el('p');status.setAttribute('role','status');
   const close=btn('Fechar',()=>dialog.close());dialog.append(heading,close,btn('Academy — aprender',openAcademy),status,content);
   async function refresh(){
@@ -37,7 +37,7 @@ export function mountProjects(){
     content.replaceChildren();
     content.append(el('p',info.configured?'IA conectada por configuração do servidor: '+info.provider+' (credenciais ainda podem precisar de validação).':'IA ainda não configurada no servidor. Projetos podem ser salvos, mas não executados.'));
     if(info.routing){
-      const panel=el('details');panel.append(el('summary','Configurar IAs da equipe'));
+      const panel=el('details');panel.open=providersExpanded;panel.ontoggle=()=>{providersExpanded=panel.open;};panel.append(el('summary','Configurar IAs da equipe'));
       const current=info.routing,draft:StudioRouting=structuredClone(current.routing);
       const labels:Record<StudioAI,string>={default:'Padrão do servidor','codex-cli':'Codex','claude-cli':'Claude Code',gemini:'Gemini API'};
       const locked=busy||info.projects.some(x=>x.state==='running'||x.delivery?.state==='running');

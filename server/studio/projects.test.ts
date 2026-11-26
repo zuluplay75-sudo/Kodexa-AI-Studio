@@ -119,6 +119,22 @@ describe('project studio',()=>{
     expect(studio.info().projects[0].handoffs?.filter(h=>h.phase==='delivery')).toHaveLength(3);
     expect(new ProjectStudio({dir:d,env:{}}).info().projects).toHaveLength(2);
   });
+  it('uses Gemini per role and only falls back to Codex after explicit authorization',async()=>{
+    const d=dir(),planner=vi.fn(async(_workspace:string,_prompt:string)=>'Codex response');
+    const f=vi.fn(async()=>new Response('{}',{status:503}));
+    const studio=new ProjectStudio({dir:d,env:{KODEXA_STUDIO_PROVIDER:'codex-cli',GEMINI_API_KEY:'test-key'},planner,fetcher:f as typeof fetch});
+    const routing={roles:Object.fromEntries(STAGES.map(s=>[s[0],s[0]==='scout'?'gemini':'default'])),fallback:false,dailyLimit:20};
+    studio.configureProviders(routing);
+    const p=studio.create({brief:'Criar aplicativo de oficina',research:false});
+    expect((await studio.next(p.id)).state).toBe('failed');expect(planner).not.toHaveBeenCalled();
+    studio.configureProviders({...routing,fallback:true});
+    const out=await studio.next(p.id);
+    expect(out.state).toBe('approval');
+    expect(out.stages[0]).toMatchObject({provider:'codex-cli',fallbackFrom:'gemini',text:'Codex response'});
+    expect(out.handoffs?.at(-1)).toMatchObject({provider:'codex-cli',fallbackFrom:'gemini',state:'completed'});
+    expect(f).toHaveBeenCalledTimes(2);expect(planner).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(studio.info())).not.toContain('test-key');
+  });
   it('does not invent execution when provider unavailable or fails',async()=>{
     const s=new ProjectStudio({dir:dir(),env:{}});
     const p=s.create({brief:'Criar aplicativo de oficina',research:false});
