@@ -23,7 +23,12 @@ import type { DeliveryIndex } from '../deliveries/deliveries';
 import type { FileFetcher } from '../deliveries/fetcher';
 import { HOST_WAIT_MS } from '../host-wait';
 
+import { ProjectError, type ProjectStudio } from '../studio/projects';
+import { StudyError, type AcademyStudy } from '../academy/study';
+
 export interface ApiDeps {
+  studio?: ProjectStudio;
+  academyStudy?:AcademyStudy;
   office: Office;
   hub: Hub;
   accounts: AccountsService;
@@ -333,6 +338,71 @@ export function createApiHandler(deps: ApiDeps): (req: IncomingMessage, res: Ser
     const method = req.method ?? 'GET';
     const isRead = method === 'GET' || method === 'HEAD';
 
+    if (path === '/api/studio' || path.startsWith('/api/studio/')) {
+      if (!trusted(req, 'messages') || (!isRemote(req) && !isLoopbackAddress(req.socket.remoteAddress))) {
+        req.resume(); sendJson(res,403,{error:'Acesso ao estúdio não autorizado.'}); return true;
+      }
+      if(path==='/api/studio/academy'||path==='/api/studio/academy/study'){
+        const academy=deps.academyStudy;
+        if(!academy){req.resume();sendJson(res,503,{error:'Academy indisponível.'});return true;}
+        if(path==='/api/studio/academy'&&method==='GET'){sendJson(res,200,academy.info());return true;}
+        if(path!=='/api/studio/academy/study'||method!=='POST'){methodNotAllowed(res,path.endsWith('/study')?'POST':'GET');return true;}
+        void readJson(req,12*1024*1024).then(body=>sendJson(res,202,academy.launch(body))).catch(err=>{if(err instanceof StudyError)sendJson(res,err.status,{error:err.message});else fail(res,err);});
+        return true;
+      }
+      const studio = deps.studio;
+      if (!studio) {req.resume();sendJson(res,503,{error:'Estúdio indisponível.'});return true;}
+      if (path === '/api/studio' && method === 'GET') {sendJson(res,200,studio.info());return true;}
+      if(path==='/api/studio/providers'||path==='/api/studio/providers/test'){
+        if(!trusted(req,'spawn')){req.resume();sendJson(res,403,{error:'Configuração não autorizada.'});return true;}
+        if(path==='/api/studio/providers'&&method==='GET'){sendJson(res,200,studio.providerInfo());return true;}
+        if(method!=='POST'){methodNotAllowed(res,path.endsWith('/test')?'POST':'GET, POST');return true;}
+        void readJson(req).then(async body=>sendJson(res,200,path.endsWith('/test')?await studio.testProvider(body):studio.configureProviders(body))).catch(err=>{if(err instanceof ProjectError)sendJson(res,err.status,{error:err.message});else fail(res,err);});return true;
+      }
+      const archive=/^\/api\/studio\/projects\/([a-f0-9-]+)\/archive$/.exec(path);
+      if(archive&&method==='GET'){
+        if(!trusted(req,'spawn')){sendJson(res,403,{error:'Exportação não autorizada.'});return true;}
+        try{const zip=studio.archive(archive[1]);res.writeHead(200,{'Content-Type':'application/zip','Content-Length':zip.length,'Content-Disposition':'attachment; filename="kodexa-'+archive[1]+'.zip"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(zip);}
+        catch(err){if(err instanceof ProjectError)sendJson(res,err.status,{error:err.message});else fail(res,err);}
+        return true;
+      }
+      const preview=/^\/api\/studio\/projects\/([a-f0-9-]+)\/preview$/.exec(path);
+      if(preview&&method==='GET'){
+        if(!trusted(req,'spawn')){sendJson(res,403,{error:'Prévia não autorizada.'});return true;}
+        try{sendJson(res,200,studio.preview(preview[1]));}catch(err){if(err instanceof ProjectError)sendJson(res,err.status,{error:err.message});else fail(res,err);}
+        return true;
+      }
+      const runtime=/^\/api\/studio\/projects\/([a-f0-9-]+)\/runtime(?:\/(start|stop))?$/.exec(path);
+      if(runtime){
+        if(!trusted(req,'spawn')){req.resume();sendJson(res,403,{error:'Runtime não autorizado.'});return true;}
+        void (async()=>{
+          if(!runtime[2]&&method==='GET')return sendJson(res,200,studio.runtimeStatus(runtime[1]));
+          if(!runtime[2]||method!=='POST')return methodNotAllowed(res,runtime[2]?'POST':'GET');
+          const body=await readJson(req);
+          if(runtime[2]==='start')return sendJson(res,200,await studio.startRuntime(runtime[1],(body as {approved?:unknown}|null)?.approved));
+          return sendJson(res,200,studio.stopRuntime(runtime[1]));
+        })().catch(err=>{if(err instanceof ProjectError)sendJson(res,err.status,{error:err.message});else fail(res,err);});
+        return true;
+      }
+      if (method !== 'POST') {methodNotAllowed(res,'POST');return true;}
+      void (async()=>{
+        const body = await readJson(req);
+        if(path === '/api/studio/projects') return sendJson(res,201,studio.create(body));
+        const match = /^\/api\/studio\/projects\/([a-f0-9-]+)\/(next|approve|deliver|revise)$/.exec(path);
+        if (!match) return sendJson(res,404,{error:'Rota desconhecida.'});
+        if(match[2]==='revise'){
+          if(!trusted(req,'spawn'))return sendJson(res,403,{error:'Cópia de projeto não autorizada.'});
+          return sendJson(res,201,studio.revise(match[1],body));
+        }
+        if(match[2]==='deliver'){
+          if(!trusted(req,'spawn'))return sendJson(res,403,{error:'Execução de código não autorizada.'});
+          return sendJson(res,202,studio.deliver(match[1],(body as {approved?:unknown}|null)?.approved));
+        }
+        const p = match[2] === 'next' ? studio.launch(match[1],(body as {all?:unknown}|null)?.all===true) : studio.approve(match[1],(body as {decision?:unknown}|null)?.decision);
+        sendJson(res,match[2] === 'next' ? 202 : 200,p);
+      })().catch(err=>{if(err instanceof ProjectError) sendJson(res,err.status,{error:err.message});else fail(res,err);});
+      return true;
+    }
     if (isRemote(req) && isLocalOnlyPath(path)) {
       req.resume();
       sendJson(res, 403, { error: tr('rota só do próprio computador (hooks, plugins e o auxiliar do host)') });

@@ -11,4 +11,13 @@ const LOADERS: Partial<Record<Locale, () => Promise<Readonly<Record<string, stri
 const locale = getLocale();
 const load = LOADERS[locale];
 const dictionary = load ? load().then((d) => registerDictionary(locale, d)).catch(() => undefined) : Promise.resolve();
-void dictionary.then(() => import('./app')).then((app) => app.start());
+void dictionary.then(() => import('./app')).then(async (app) => {
+  const store = app.start();
+  // Não interfere com as capturas, testes visuais ou o escritório mock original.
+  if (!new URLSearchParams(location.search).has('mock')) {
+    const { mountStudioSetup } = await import('./studio/onboarding');
+    mountStudioSetup((members) => store.setStudioLabels(members));
+    const { mountProjects } = await import('./studio/projects');
+    mountProjects();
+  }
+});

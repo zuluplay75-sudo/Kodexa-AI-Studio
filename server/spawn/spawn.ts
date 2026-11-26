@@ -92,7 +92,7 @@ export function spawnUrl(req: SpawnRequest): string {
 export function sessionName(prompt: string): string {
   const line = prompt.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
   const cut = line.length > NAME_MAX ? `${line.slice(0, NAME_MAX - 1)}…` : line;
-  return cut ? `Habblaud: ${cut}` : 'Habblaud';
+  return cut ? `Kodexa AI Studio: ${cut}` : 'Kodexa AI Studio';
 }
 
 /** Argumentos do `claude`: o pedido depois de `--` (um pedido "doctor" ou "-x" continua sendo pedido). */

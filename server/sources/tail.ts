@@ -197,12 +197,13 @@ export class FileTail {
    * birthtime, e com o mesmo tamanho (ou maior) o `size < offset` também não pega. Acrescentar linhas muda o mtime
    * sem mexer no começo, então só uma mudança no começo conta como troca.
    */
-  private replaced(fd: number, st: { ino: number; birthtimeMs: number; mtimeMs: number }): boolean {
+  private replaced(fd: number, st: { ino: number; birthtimeMs: number; mtimeMs: number; size: number }): boolean {
     if (this.ino === undefined) return false;
     if (st.ino !== this.ino) return true;
     const born = this.birthtimeMs > 0 && st.birthtimeMs > 0 && st.birthtimeMs !== this.birthtimeMs;
     const written = st.mtimeMs !== this.mtimeMs;
-    if (!born && !written) return false;
+    // Uma mudança de tamanho também pode ocorrer dentro da mesma resolução do relógio do arquivo.
+    if (!born && !written && st.size === this.size) return false;
     return !!this.head && !readHead(fd, this.head.length).equals(this.head);
   }
 

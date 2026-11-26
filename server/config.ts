@@ -9,6 +9,7 @@ import { parseAllowedHosts } from './http/guard';
 import { parseRemoteConfig, type RemoteConfig } from './http/remote';
 import { parseGithubRepo } from './updates/checker';
 import { tr } from '../shared/i18n';
+import { applyKodexaEnv } from './branding-env';
 
 export interface ServerConfig {
   port: number;
@@ -92,7 +93,7 @@ export function findRoot(from: string): string {
     if (existsSync(pkg)) {
       try {
         const name = (JSON.parse(readFileSync(pkg, 'utf8')) as { name?: unknown }).name;
-        if (name === 'habblaud') return dir;
+        if (name === 'kodexa-ai-studio' || name === 'habblaud') return dir;
       } catch {
         // package.json ilegível: continua subindo
       }
@@ -223,6 +224,7 @@ export function worldSocketUrl(base: string): string {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] = process.argv): ServerConfig {
+  env = applyKodexaEnv(env);
   const home = env.HOME || homedir();
   const inDocker = detectDocker(env);
   const port = Number.parseInt(env.HABBLAUD_PORT ?? '', 10);

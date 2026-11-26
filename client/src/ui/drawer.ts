@@ -535,7 +535,7 @@ class AgentView {
     updateAvatar(this.avatar, a, 'lg');
     setStyleVar(this.avatar, '--acc', account?.color ?? '#8b98b3');
     setText(this.name, a.name);
-    this.character.render(a, !!live);
+    this.character.render(a, !!live&&!a.managed);
     setText(this.role, roleLabel(a));
     setVariant(this.role, 'ui-role--', a.kind);
     setText(this.title, a.title ?? '');
@@ -575,7 +575,7 @@ class AgentView {
       const accName = account?.name ?? a.account;
       // Codex: "Vá ao Codex (Conta X)"; sem repetir quando a conta já se chama "Codex".
       const where = codex ? tr('ao Codex{0}', [/codex/i.test(accName) ? '' : ` (${accName})`]) : tr('ao terminal da {0}', [accName]);
-      setText(this.alertText, tr('Vá {0} em {1} para responder{2}', [where, room?.name ?? tr('seu projeto'), a.waitingFor ? `: ${a.waitingFor}` : '.']));
+      setText(this.alertText, a.managed?'Abra Projetos IA para aprovar a pesquisa do Scout.':tr('Vá {0} em {1} para responder{2}', [where, room?.name ?? tr('seu projeto'), a.waitingFor ? `: ${a.waitingFor}` : '.']));
     }
     // Perguntas do AskUserQuestion (só leitura): o Codex não pergunta pelo escritório.
     const asking = waiting && !codex && a.activity?.kind === 'ask' ? a.activity : undefined;
@@ -692,7 +692,8 @@ class AgentView {
 
   private renderTerminalButton(live: boolean, provider = providerOf(this.last)): void {
     const router = this.ctx.terminals;
-    const available = (router ? router.available : !!this.ctx.store.snapshot?.meta.terminal) && access().terminal;
+    setHidden(this.termBtn,!!this.last?.managed);
+    const available = !this.last?.managed && (router ? router.available : !!this.ctx.store.snapshot?.meta.terminal) && access().terminal;
     const open = (router ? router.openAgentId : this.terminal.agentId) === this.id;
     // Interativo: o Claude Code roda aqui (pty) ou roda noutro terminal e dá para assumir pela janela.
     const readOnly = !!this.ctx.store.snapshot?.meta.terminal;
@@ -930,7 +931,7 @@ class RoomView {
     }
     setHidden(this.gone, !!live);
     setHidden(this.renameBtn, !live || !canRenameRoom(this.ctx, r.id));
-    setHidden(this.newBtn, !this.pty.enabled);
+    setHidden(this.newBtn, !this.pty.enabled||!!r.managed);
 
     const snap = this.ctx.store.snapshot;
     const agents = (snap?.agents ?? []).filter((a) => a.roomId === r.id);

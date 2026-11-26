@@ -2,8 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/kodexa-academy-bootstrap]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -24,7 +25,19 @@ jobs:
           node-version: '22.12'
           cache: npm
 
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
+      - name: Install dependencies
+        id: install
+        run: npm ci
+      - name: TypeScript checks
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run typecheck
+      - name: Automated tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm test
+      - name: Production build
+        id: build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run build
+      - name: Production login smoke test
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: npx --no-install tsx scripts/kodexa-smoke.ts

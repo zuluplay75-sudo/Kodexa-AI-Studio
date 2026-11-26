@@ -8,6 +8,7 @@
 // a idade ("há 12 min") fica sempre à mostra. Sem cota nem créditos ("sem cota") nunca vira 0%. Não há o que
 // instalar para o uso: "Como funciona" abre a ajuda na seção do Codex. Sem Opus/Sonnet nem e-mail (só o plano).
 import type { AccountInfo } from '../../../shared/types';
+import type { RoutingInfo, ManagedAI } from '../../../shared/studio-project';
 import type { UiContext } from './context';
 import { h, KeyedList, setAttr, setHidden, setStyleVar, setText, setTitle, setVariant } from './dom';
 import { FIVE_HOURS_MS, relativeTime, usageLevel, usageWindowView, WEEK_MS, type UsageWindowView } from './format';
@@ -205,6 +206,12 @@ export class UsageCards {
   readonly el: HTMLElement;
   private list: KeyedList<AccountInfo>;
   private refs = new WeakMap<HTMLElement, CardRefs>();
+  private studioCard?: HTMLElement;
+  private studioReading?: RoutingInfo;
+  private studioUnavailable=false;
+  private studioLoading=false;
+  private studioFetchedAt=0;
+  private readonly studioLabels:Record<ManagedAI,string>={'codex-cli':'Codex','claude-cli':'Claude',gemini:'Gemini'};
 
   constructor(private ctx: UiContext) {
     this.el = h('div', { class: 'ui-usage', role: 'group', attrs: { 'aria-label': tr('Uso por conta') } });
@@ -215,20 +222,70 @@ export class UsageCards {
     });
     // A largura da janela mudou: refaz a conta de cabem-ou-não (ver fit()).
     if (typeof ResizeObserver === 'function') new ResizeObserver(() => this.fit()).observe(ctx.root);
+    // Não afeta replay/mock; a API autenticada retorna somente contadores e status, nunca chaves.
+    if (!new URLSearchParams(location.search).has('mock')) {
+      void this.refreshStudioUsage();
+      setInterval(()=>{if(document.visibilityState!=='hidden')void this.refreshStudioUsage();},15000);
+      document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void this.refreshStudioUsage();});
+    }
   }
 
   render(): void {
-    const accounts = this.ctx.store.snapshot?.accounts ?? [];
+    const snapshotAccounts = this.ctx.store.snapshot?.accounts ?? [];
+    // A conta virtual continua no snapshot para os agentes; não representa uma assinatura.
+    const accounts = snapshotAccounts.filter(a => a.id !== 'kodexa:managed');
+    if (!this.studioCard && snapshotAccounts.some(a => a.id === 'kodexa:managed')) this.updateStudioCard();
     this.list.sync(accounts);
-    this.el.classList.toggle('is-empty', accounts.length === 0);
-    setStyleVar(this.el, '--count', String(accounts.length));
+    if(this.studioCard&&this.el.lastElementChild!==this.studioCard)this.el.append(this.studioCard);
+    const count=accounts.length+(this.studioCard?1:0);
+    this.el.classList.toggle('is-empty', count === 0);
+    setStyleVar(this.el, '--count', String(count));
     // Medir força o layout da página, e o render roda a cada quadro no replay: só quando as contas mudam (a largura da
     // janela fica com o ResizeObserver do construtor).
-    const key = accounts.map((a) => a.id).join('|');
+    const key = accounts.map((a) => a.id).join('|')+(this.studioCard?'|kodexa-planning':'');
     if (key !== this.fitKey) {
       this.fitKey = key;
       this.fit();
     }
+  }
+
+  private async refreshStudioUsage():Promise<void>{
+    if(this.studioLoading)return;
+    this.studioLoading=true;
+    try{
+      const r=await fetch('/api/studio/providers',{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(8000)});
+      if(!r.ok)throw Error('indisponível');
+      const info=await r.json() as RoutingInfo;
+      if(!Array.isArray(info.providers)||!Number.isInteger(info.routing?.dailyLimit))throw Error('resposta inválida');
+      this.studioReading=info;this.studioUnavailable=false;this.studioFetchedAt=Date.now();
+    }catch{
+      this.studioUnavailable=true;
+    }finally{
+      this.studioLoading=false;
+      if(this.studioReading||this.studioCard){
+        this.updateStudioCard();
+        this.render();
+      }
+    }
+  }
+
+  private updateStudioCard():void{
+    if(!this.studioCard){
+      this.studioCard=h('div',{class:'ui-usage-card kodexa-planning-usage',tabIndex:0,attrs:{'aria-label':'Gemini: chamadas internas de planejamento do Kodexa'}});
+    }
+    const info=this.studioReading;
+    const gemini=info?.providers.find(p=>p.id==='gemini');
+    const available=!!info&&!!gemini&&!this.studioUnavailable;
+    const count=available&&info&&gemini?String(gemini.calls)+'/'+info.routing.dailyLimit:'—';
+    const status=!available||!gemini?'Sem dados':!gemini.configured?'Não configurado':gemini.state==='ok'?'Último teste OK':gemini.state==='failed'?'Última chamada falhou':'Sem teste';
+    const description='Limite diário interno do Kodexa (UTC): chamadas de planejamento e testes, incluindo falhas. Não representa tokens, custos nem cotas do Google. Não inclui execução ou sessões externas.';
+    const other=available&&info?info.providers.filter(p=>p.id!=='gemini').map(p=>this.studioLabels[p.id]+': '+p.calls+'/'+info.routing.dailyLimit+' chamadas internas').join('; '):'';
+    this.studioCard.title=description+(available&&gemini?' '+gemini.message+(gemini.at?' Última chamada: '+new Date(gemini.at).toLocaleString():'')+' Última leitura: '+new Date(this.studioFetchedAt).toLocaleTimeString():' Dados indisponíveis.')+(other?' '+other+'.':'');
+    this.studioCard.replaceChildren(
+      h('div',{class:'kodexa-planning-usage__title',text:'Gemini · API'}),
+      h('div',{class:'kodexa-planning-usage__row'},h('span',{text:'Chamadas/dia UTC'}),h('strong',{text:count})),
+      h('div',{class:'kodexa-planning-usage__row'},h('span',{text:'Status'}),h('strong',{text:status})),
+    );
   }
 
   /** Contas da última medida em fit() (ver render). */

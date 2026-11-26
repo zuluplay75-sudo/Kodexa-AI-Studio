@@ -154,12 +154,12 @@ describe('SpawnService com anexos', () => {
 
 describe('novo agente em segundo plano (claude --bg)', () => {
   it('nome da sessão e argumentos: o pedido vai depois de `--`', () => {
-    expect(sessionName('  \n rode os testes\nsegunda linha')).toBe('Habblaud: rode os testes');
-    expect(sessionName('')).toBe('Habblaud');
-    expect(sessionName('x'.repeat(100))).toHaveLength('Habblaud: '.length + 48);
-    expect(cliArgs({ folder: '/p', prompt: 'doctor' })).toEqual(['--bg', '-n', 'Habblaud: doctor', '--', 'doctor']);
+    expect(sessionName('  \n rode os testes\nsegunda linha')).toBe('Kodexa AI Studio: rode os testes');
+    expect(sessionName('')).toBe('Kodexa AI Studio');
+    expect(sessionName('x'.repeat(100))).toHaveLength('Kodexa AI Studio: '.length + 48);
+    expect(cliArgs({ folder: '/p', prompt: 'doctor' })).toEqual(['--bg', '-n', 'Kodexa AI Studio: doctor', '--', 'doctor']);
     expect(cliArgs({ folder: '/p', prompt: '--dangerously-skip-permissions' }).slice(-2)).toEqual(['--', '--dangerously-skip-permissions']);
-    expect(cliArgs({ folder: '/p', prompt: '  ' })).toEqual(['--bg', '-n', 'Habblaud']);
+    expect(cliArgs({ folder: '/p', prompt: '  ' })).toEqual(['--bg', '-n', 'Kodexa AI Studio']);
   });
 
   it('createCliRunner roda o binário na pasta, sem shell, e lê o id; erro vira a 1ª linha', async () => {
@@ -177,7 +177,7 @@ describe('novo agente em segundo plano (claude --bg)', () => {
     expect(await run({ folder: dir, prompt: 'faça $(rm -rf x) && y' })).toEqual({ ok: true, id: '7eacc670' });
     const args = readFileSync(join(dir, 'args'), 'utf8').trim().split('\n');
     expect(realpathSync(args[0])).toBe(realpathSync(dir));
-    expect(args.slice(1)).toEqual(['--bg', '-n', 'Habblaud: faça $(rm -rf x) && y', '--', 'faça $(rm -rf x) && y']);
+    expect(args.slice(1)).toEqual(['--bg', '-n', 'Kodexa AI Studio: faça $(rm -rf x) && y', '--', 'faça $(rm -rf x) && y']);
     expect(await run({ folder: tmpdir(), prompt: 'oi' })).toEqual({ ok: false, error: 'Workspace not trusted. Run claude once' });
   });
 

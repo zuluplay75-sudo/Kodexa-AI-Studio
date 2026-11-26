@@ -39,6 +39,15 @@ describe('contas do Codex', () => {
     expect(discoverCodexDirs({ HABBLAUD_CODEX_DIRS: `~/.codex-vazia, ${other}, /nao/existe` }, h.dir)).toEqual([join(h.dir, '.codex-vazia'), other]);
   });
 
+  it('inclui a conta dedicada do Kodexa sem duplicar nem ignorar o override explícito', () => {
+    const h = home();
+    const main = h.codex('.codex');
+    const dedicated = h.codex('.kodexa-codex', 'year');
+    expect(discoverCodexDirs({KODEXA_EXEC_CODEX_HOME:dedicated},h.dir)).toEqual([main,dedicated]);
+    expect(discoverCodexDirs({CODEX_HOME:dedicated,KODEXA_EXEC_CODEX_HOME:dedicated},h.dir)).toEqual([dedicated,main]);
+    expect(discoverCodexDirs({HABBLAUD_CODEX_DIRS:main,KODEXA_EXEC_CODEX_HOME:dedicated},h.dir)).toEqual([main]);
+  });
+
   it('letra pelo alias de shell (CODEX_HOME), derivada sem colidir com o Claude Code; cor sem repetir', () => {
     const h = home();
     const main = h.codex('.codex');

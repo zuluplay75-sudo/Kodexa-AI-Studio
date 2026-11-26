@@ -11147,3 +11147,20 @@ html.is-replay #world {
 .ui-world-chip__visitors[hidden] {
   display: none;
 }
+
+/* Kodexa: escritório lúdico em pixel art, marca vetorial e paleta acolhedora. */
+.ui-root { --ui-bg:rgba(34,43,57,.94); --ui-bg-solid:#293241; --ui-line:rgba(233,196,106,.18); --ui-line-strong:rgba(233,196,106,.32); --ui-accent:#E9C46A; --ui-accent-soft:rgba(233,196,106,.15); }
+.ui-brand__mark img,.ui-splash .ui-brand__mark img {image-rendering:auto}
+.ui-brand__name,.ui-splash__name {line-height:1.1}
+.ui-kodexa-wordmark,.ui-kodexa-submark {display:block;white-space:nowrap;text-align:center;font-family:var(--font-ui);font-weight:700;letter-spacing:.14em;color:#F8FAFC}
+.ui-kodexa-wordmark {font-size:16px}
+.ui-kodexa-submark {font-size:8px;color:#A5B4FC;letter-spacing:.24em;margin-top:3px}
+.ui-splash__name .ui-kodexa-wordmark {font-size:28px}
+.ui-splash__name .ui-kodexa-submark {font-size:12px}
+
+/* Indicador adicional do Kodexa: separado das cotas reais dos cartões originais. */
+.ui-usage-card.kodexa-planning-usage { display:flex; flex-direction:column; align-items:stretch; gap:2px; width:205px; min-width:178px; padding:5px 9px; }
+.kodexa-planning-usage__title { font-size:11px; font-weight:600; white-space:nowrap; }
+.kodexa-planning-usage__row { display:flex; justify-content:space-between; gap:8px; font-size:11px; line-height:1.15; white-space:nowrap; }
+.kodexa-planning-usage__row strong { font-variant-numeric:tabular-nums; }
+@media (max-width:600px) { .ui-usage-card.kodexa-planning-usage { flex:0 0 178px; min-width:178px; } }

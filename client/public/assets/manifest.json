@@ -12,12 +12,12 @@
       "h": 128
     },
     "signage": {
-      "file": "brand/signage.png",
+      "file": "brand/kodexa-signage.svg",
       "w": 64,
       "h": 16
     },
     "signageLarge": {
-      "file": "brand/signage@4x.png",
+      "file": "brand/kodexa-signage@4x.svg",
       "w": 256,
       "h": 64
     },

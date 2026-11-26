@@ -27,6 +27,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { parsePasswordHash, verifyPassword, type PasswordHash } from '../remote/password';
 import { hostAllowed } from './guard';
+import { codespaceLoginHost } from './codespace-login';
 import { getLocale, tr } from '../../shared/i18n';
 
 export type RemoteFeature = 'permissions' | 'messages' | 'terminal' | 'spawn';
@@ -50,6 +51,8 @@ export interface RemoteConfig {
   allow: ReadonlySet<RemoteFeature>;
   /** Ausente = HTTP puro (só com HABBLAUD_REMOTE_INSECURE_HTTP=1). */
   tls?: RemoteTls;
+  /** Private Codespaces HTTPS proxy; upstream listens only on loopback. */
+  codespaceProxyHost?: string;
 }
 
 export const DEFAULT_REMOTE_PORT = 4748;
@@ -81,6 +84,11 @@ export function parseRemoteConfig(
   if (!user || !hashText) return { warning: tr('acesso remoto desligado: faltam HABBLAUD_REMOTE_USER e HABBLAUD_REMOTE_PASSWORD_HASH; rode npm run remote:setup') };
   const passwordHash = parsePasswordHash(hashText);
   if (!passwordHash) return { warning: tr('acesso remoto desligado: HABBLAUD_REMOTE_PASSWORD_HASH inválido; rode npm run remote:setup') };
+  if (truthy(env.HABBLAUD_CODESPACE_LOGIN)) {
+    const proxyHost = codespaceLoginHost(env);
+    if (!proxyHost || inDocker) return { warning: 'Kodexa: ambiente Codespaces privado inválido para login.' };
+    return { config: { port: DEFAULT_REMOTE_PORT, host: '127.0.0.1', user, passwordHash, passwordHashText: hashText, allow: parseAllow(env.HABBLAUD_REMOTE_ALLOW), codespaceProxyHost: proxyHost } };
+  }
   const dir = defaultTlsDir(env, inDocker);
   const tls: RemoteTls = { dir, keyFile: join(dir, 'server.key'), certFile: join(dir, 'server.crt'), caFile: join(dir, 'ca.crt') };
   const hasTls = exists(tls.keyFile) && exists(tls.certFile);
@@ -149,7 +157,7 @@ export class RemoteSessions {
 
   issue(): { token: string; maxAgeS: number } {
     const exp = this.now() + SESSION_MS;
-    const payload = `v1.${exp}`;
+    const payload = `v2.${exp}.${randomBytes(16).toString('base64url')}`;
     return { token: `${payload}.${this.sign(payload)}`, maxAgeS: Math.floor(SESSION_MS / 1000) };
   }
 
@@ -170,13 +178,14 @@ export class RemoteSessions {
 
   private parse(token: string | undefined): { exp: number; sig: string } | undefined {
     if (!token) return undefined;
-    const m = /^v1\.(\d{10,16})\.([A-Za-z0-9_-]{43})$/.exec(token);
-    if (!m) return undefined;
-    const exp = Number(m[1]);
-    if (exp <= this.now()) return undefined;
-    const expected = Buffer.from(this.sign(`v1.${m[1]}`));
-    const got = Buffer.from(m[2]);
-    return expected.length === got.length && timingSafeEqual(expected, got) ? { exp, sig: m[2] } : undefined;
+    const m=/^(v2\.(\d{10,16})\.[A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]{43})$/.exec(token)
+      ?? /^(v1\.(\d{10,16}))\.([A-Za-z0-9_-]{43})$/.exec(token);
+    if(!m)return undefined;
+    const exp=Number(m[2]);
+    if(exp<=this.now())return undefined;
+    const expected=Buffer.from(this.sign(m[1]));
+    const got=Buffer.from(m[3]);
+    return expected.length===got.length&&timingSafeEqual(expected,got)?{exp,sig:m[3]}:undefined;
   }
 
   private loadRevoked(): void {
@@ -261,7 +270,7 @@ export class LoginThrottle {
 const remoteRequests = new WeakSet<IncomingMessage>();
 /** Arquivos que a porta remota serve sem login: manifesto e ícones (o celular os busca antes do login, sem o
  *  cookie). Nada da API nem do escritório. */
-const PUBLIC_STATIC = /^\/(manifest\.webmanifest|assets\/brand\/[\w.@-]+\.png)$/;
+const PUBLIC_STATIC = /^\/(manifest\.webmanifest|assets\/brand\/[\w.@-]+\.png|assets\/brand\/kodexa-(?:app|logo)\.svg)$/;
 
 export function isRemoteRequest(req: IncomingMessage): boolean {
   return remoteRequests.has(req);
@@ -299,7 +308,7 @@ function esc(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-export function loginPage(opts: { caDownload: boolean }): string {
+export function loginPage(opts: { caDownload: boolean; publicGoogle?: boolean }): string {
   const ca = opts.caDownload
     ? `<p class="ca">${esc(tr('Primeira vez neste celular?'))} <a href="${CA_PATH}" download="habblaud-ca.crt">${esc(tr('Instale o certificado do Habblaud'))}</a> ${esc(tr('para tirar o aviso de segurança (confira a impressão digital que o npm run remote:setup mostrou).'))}</p>`
     : '';
@@ -311,12 +320,12 @@ export function loginPage(opts: { caDownload: boolean }): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>${esc(tr('Habblaud · entrar'))}</title>
+<title>Kodexa AI Studio · ${esc(tr('Entrar'))}</title>
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon.png">
+<link rel="icon" href="/assets/brand/kodexa-app.svg" type="image/svg+xml">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Habblaud">
+<meta name="apple-mobile-web-app-title" content="Kodexa AI Studio">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <style>
   :root { color-scheme: dark; }
@@ -334,19 +343,24 @@ export function loginPage(opts: { caDownload: boolean }): string {
   input:focus { outline: none; border-color: #f4c95d; }
   button { width: 100%; margin-top: 20px; padding: 12px; font: inherit; font-weight: 700; color: #14161f; background: #f4c95d;
            border: 0; border-radius: 6px; cursor: pointer; }
+  .google-login { display: block; margin-top: 12px; padding: 12px; border: 1px solid #737d99;
+                  border-radius: 6px; text-align: center; text-decoration: none; color: #e8e6df; }
+  .google-login:hover, .google-login:focus-visible { border-color: #f4c95d; }
   button:disabled { opacity: .6; cursor: wait; }
   #err { min-height: 20px; margin-top: 12px; color: #ff8a80; font-size: 13px; }
 </style>
 </head>
 <body>
 <form id="f" autocomplete="on">
-  <h1>Habblaud</h1>
-  <p>${esc(tr('Acesso pelo celular. Entre com o usuário e a senha que você escolheu no npm run remote:setup.'))}</p>
+  <img src="/assets/brand/kodexa-logo.svg" alt="Kodexa AI Studio" width="240" height="96" style="display:block;max-width:100%;margin:0 auto 12px;object-fit:contain">
+  <h1>Kodexa AI Studio</h1>
+  <p>${esc(tr('Acesso pelo celular. Entre com o usuário e a senha que você escolheu no npm run remote:setup.').replace('npm run remote:setup', 'configurador de acesso'))}</p>
   <label for="u">${esc(tr('Usuário'))}</label>
   <input id="u" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
   <label for="p">${esc(tr('Senha'))}</label>
   <input id="p" name="password" type="password" autocomplete="current-password" required>
   <button id="b" type="submit">${esc(tr('Entrar'))}</button>
+  ${opts.publicGoogle ? '<a class="google-login" href="https://studio.kodexa.ia.br/public/google">Entrar com Google</a>' : ''}
   <div id="err" role="alert"></div>
   ${ca}
 </form>
@@ -361,7 +375,7 @@ export function loginPage(opts: { caDownload: boolean }): string {
       if (r.ok) { location.replace('/'); return; }
       const body = await r.json().catch(() => ({}));
       err.textContent = body.error || ${js(tr('Não deu para entrar.'))};
-    } catch { err.textContent = ${js(tr('Sem conexão com o Habblaud.'))}; }
+    } catch { err.textContent = ${js(tr('Sem conexão com o Habblaud.').replace('Habblaud', 'Kodexa AI Studio'))}; }
     b.disabled = false;
   });
 </script>
@@ -387,7 +401,7 @@ function cookieHeader(value: string, maxAgeS: number, secure: boolean): string {
 }
 
 export interface RemoteGateDeps {
-  config: Pick<RemoteConfig, 'user' | 'passwordHash'>;
+  config: Pick<RemoteConfig, 'user' | 'passwordHash' | 'codespaceProxyHost'>;
   sessions: RemoteSessions;
   /** Cookie com Secure (a porta fala HTTPS). */
   secure: boolean;
@@ -491,7 +505,7 @@ export function createRemoteGate(deps: RemoteGateDeps): (req: IncomingMessage, r
       if (authed) {
         res.writeHead(302, { Location: '/', 'Cache-Control': 'no-store' });
         res.end();
-      } else sendHtml(res, loginPage({ caDownload: caAvailable() }));
+      } else sendHtml(res, loginPage({ caDownload: caAvailable(), publicGoogle: deps.config.codespaceProxyHost === 'kodexa.ia.br' }));
       return true;
     }
 

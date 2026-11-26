@@ -24,6 +24,7 @@ vi.mock('./version');
 vi.mock('./update');
 vi.mock('./viewport');
 vi.mock('./topbar', () => ({ TopBar: class {
+  worldBtn = new ElementStub();
   panelGroup = { prepend() {} };
   addPanelButton() {}
   addStatus() {}

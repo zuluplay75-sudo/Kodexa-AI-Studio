@@ -71,6 +71,7 @@ const PREFIX_HISTORY = 120;
 const BACKLOG_MAX = 400;
 /** Conta sem sessão aberta ao subir: quantos rollouts recentes tentar até achar um com o uso do plano. */
 const SEED_USAGE_FILES = 8;
+const USAGE_SCAN_MS = 5_000;
 const MAIN_ROLE = tr('Agente principal (Codex)');
 const SUB_ROLE = tr('Subagente (Codex)');
 
@@ -116,6 +117,8 @@ interface CodexAccount {
   /** Modo sem locks: rollouts modificados há pouco (thread → mtime), revistos a cada 10 s. */
   recent: Map<string, number>;
   recentAt: number;
+  usageScanAt: number;
+  usageFiles: Map<string, string>;
   usage?: AccountUsage;
   plan?: string;
   error?: string;
@@ -213,7 +216,7 @@ export class CodexSource implements AgentSource, CodexLive {
         old.configDir = e.detected.configDir;
         return old;
       }
-      return { id: e.id, dir: e.dir, configDir: e.detected.configDir, index: new RolloutIndex(e.dir, this.now), locks: null, recent: new Map(), recentAt: -Infinity };
+      return { id: e.id, dir: e.dir, configDir: e.detected.configDir, index: new RolloutIndex(e.dir, this.now), locks: null, recent: new Map(), recentAt: -Infinity, usageScanAt: -Infinity, usageFiles: new Map() };
     });
   }
 
@@ -234,7 +237,6 @@ export class CodexSource implements AgentSource, CodexLive {
     try {
       for (const acc of this.accs) acc.index.scanAll();
       this.poll(true);
-      for (const acc of this.accs) if (!acc.usage) this.seedUsage(acc);
     } finally {
       this.opts.office.endBoot();
     }
@@ -314,6 +316,7 @@ export class CodexSource implements AgentSource, CodexLive {
         }
         seen.add(key);
       }
+      if (now - acc.usageScanAt >= USAGE_SCAN_MS) this.scanUsage(acc, now);
     }
     for (const [key, t] of [...this.threads]) {
       if (seen.has(key)) continue;
@@ -740,14 +743,10 @@ export class CodexSource implements AgentSource, CodexLive {
     }
   }
 
-  /**
-   * Conta sem sessão aberta ao subir: o uso do rollout mais recente que tenha números (fica "desatualizado" com a
-   * idade: os números do Codex só se renovam com alguma sessão rodando). Por mtime em TODAS as pastas de data (uma
-   * sessão retomada continua no arquivo da pasta antiga), tentando os SEED_USAGE_FILES mais recentes: o último pode não
-   * ter `token_count` nenhum (sessão sem resposta, ou arquivada logo).
-   */
-  private seedUsage(acc: CodexAccount): void {
-    const files: Array<{ path: string; mtimeMs: number }> = [];
+  /** Lê cotas de sessões curtas que podem criar e remover o lock entre dois ciclos. */
+  private scanUsage(acc: CodexAccount, now: number): void {
+    acc.usageScanAt = now;
+    const files: Array<{ path: string; mtimeMs: number; signature: string }> = [];
     for (const dir of rolloutDirs(acc.dir)) {
       let names: string[];
       try {
@@ -759,15 +758,23 @@ export class CodexSource implements AgentSource, CodexLive {
         const r = parseRolloutName(name);
         if (!r || r.compressed) continue;
         try {
-          files.push({ path: join(dir, name), mtimeMs: statSync(join(dir, name)).mtimeMs });
+          const path = join(dir, name);
+          const { mtimeMs, ctimeMs, size } = statSync(path);
+          files.push({ path, mtimeMs, signature: `${mtimeMs}:${ctimeMs}:${size}` });
         } catch {
           // sumiu
         }
       }
     }
     files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    const previousFiles = acc.usageFiles;
+    acc.usageFiles = new Map();
     let plan: string | undefined;
     for (const f of files.slice(0, SEED_USAGE_FILES)) {
+      if (previousFiles.get(f.path) === f.signature) {
+        acc.usageFiles.set(f.path, f.signature);
+        continue;
+      }
       try {
         const tail = new FileTail(f.path);
         tail.seekTail(256 * 1024);
@@ -778,7 +785,8 @@ export class CodexSource implements AgentSource, CodexLive {
           if (!r.more) break;
         }
         plan ??= state.planType;
-        if (state.usage) return this.pushUsage(acc, state.usage, state.planType ?? plan);
+        acc.usageFiles.set(f.path, f.signature);
+        if (state.usage) this.pushUsage(acc, state.usage, state.planType ?? plan);
       } catch {
         // ilegível agora: tenta o seguinte
       }

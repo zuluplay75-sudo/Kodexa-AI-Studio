@@ -10,6 +10,16 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+- Projetos IA agrupa versões e recolhe relatórios e ações avançadas.
+
+- O cartão do Codex atualiza as cotas também quando uma sessão rápida termina entre ciclos de leitura.
+
+- O totem da entrada do escritório exibe a marca KX.
+
+- O escritório exibe os nomes e cargos salvos em Configurar estúdio. A prévia mantém visível uma falha ao iniciar o aplicativo e só oferece a abertura de uma porta manual após o preenchimento.
+
+- A prévia do Studio oferece o link da porta privada do Codespaces também ao abrir o Kodexa por um domínio próprio.
+
 ## [1.0.3] - 2026-10-16
 
 ### Corrigido

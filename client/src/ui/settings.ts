@@ -160,7 +160,7 @@ export class SettingsPopover implements UiComponent {
       (v) => pickLanguage(v),
     );
     this.language.row.append(
-      h('span', { class: 'ui-set__hint', text: tr('Os textos das atividades vêm do servidor: seguem HABBLAUD_LANG ou o idioma do sistema onde o Habblaud roda (o inglês, só com HABBLAUD_LANG=en).') }),
+      h('span', { class: 'ui-set__hint', text: tr('Os textos das atividades vêm do servidor: seguem HABBLAUD_LANG ou o idioma do sistema onde o Habblaud roda (o inglês, só com HABBLAUD_LANG=en).').replaceAll('Habblaud', 'Kodexa AI Studio') }),
     );
 
     this.demoGroup = h(
@@ -212,6 +212,13 @@ export class SettingsPopover implements UiComponent {
         h('h3', { text: tr('Avisos') }),
         sw('browserNotifications', tr('Notificações do navegador'), tr('Avisa quando alguém precisa de você e a aba está em segundo plano.'), () => void this.toggleNotifications()),
       ),
+      ...(!new URLSearchParams(location.search).has('mock') ? [h('div', { class: 'ui-set-group' },
+        h('h3', { text: 'Equipe Kodexa' }),
+        h('button', { class: 'ui-btn', type: 'button', text: 'Configurar equipe e IAs', on: { click: () => {
+          const launch = document.getElementById('kodexa-setup-launch');
+          if (launch) { this.hide(); launch.click(); }
+        } } }),
+      )] : []),
       this.soundGroup.el,
       h('div', { class: 'ui-set-group' }, h('h3', { text: tr('Idioma') }), this.language.row),
       this.demoGroup,

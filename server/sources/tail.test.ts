@@ -64,6 +64,19 @@ describe('FileTail', () => {
     expect(r.lines).toEqual(['novo-1', 'novo-2']);
   });
 
+  it('detecta regravação maior no mesmo inode com o mesmo mtime', () => {
+    const timestamp = 1_700_000_000;
+    writeFileSync(file, 'a\n');
+    utimesSync(file, timestamp, timestamp);
+    const t = new FileTail(file);
+    t.read();
+
+    writeFileSync(file, 'novo-1\nnovo-2\n');
+    utimesSync(file, timestamp, timestamp);
+
+    expect(t.read()).toMatchObject({ reset: true, lines: ['novo-1', 'novo-2'] });
+  });
+
   it('não trata linhas acrescentadas ao mesmo arquivo como rotação', () => {
     writeFileSync(file, 'a\n');
     const t = new FileTail(file);

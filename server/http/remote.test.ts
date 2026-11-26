@@ -26,6 +26,7 @@ import {
 import { Hub } from './sse';
 import { hashPassword, parsePasswordHash } from '../remote/password';
 import { SpawnService } from '../spawn/spawn';
+import { ProjectStudio } from '../studio/projects';
 
 setQuiet(true);
 
@@ -72,6 +73,31 @@ describe('parseRemoteConfig', () => {
   });
 });
 
+describe('Kodexa Codespaces login', () => {
+  const env = { HABBLAUD_CODESPACE_LOGIN: '1', HABBLAUD_REMOTE_USER: 'ana', HABBLAUD_REMOTE_PASSWORD_HASH: HASH_TEXT, CODESPACES: 'true', CODESPACE_NAME: 'my-space', GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: 'app.github.dev' };
+  it('requires explicit private-proxy mode and binds the gated listener to loopback', () => {
+    const result = parseRemoteConfig(env, false, () => false);
+    expect(result.config).toMatchObject({ host: '127.0.0.1', port: 4748, codespaceProxyHost: 'my-space-4748.app.github.dev' });
+    expect(result.config?.tls).toBeUndefined();
+  });
+  it('allows an explicit tunnel hostname only on the authenticated loopback listener', () => {
+    const custom = parseRemoteConfig({...env,KODEXA_TUNNEL_HOST:'kodexaia.com.br'},false,()=>false).config;
+    expect(custom).toMatchObject({host:'127.0.0.1',port:4748,codespaceProxyHost:'kodexaia.com.br'});
+    expect(custom?.tls).toBeUndefined();
+    expect(parseRemoteConfig({...env,KODEXA_TUNNEL_HOST:'kodexaia.com.br',CODESPACES:'false'},false).config).toBeUndefined();
+  });
+  it('rejects malformed or local custom tunnel hostnames instead of falling back silently', () => {
+    for(const host of ['', 'https://kodexaia.com.br', 'kodexaia.com.br:4748', '*.com.br', '127.0.0.1', 'foo.localhost', 'a..com.br', '-a.com.br']){
+      expect(parseRemoteConfig({...env,KODEXA_TUNNEL_HOST:host},false).config).toBeUndefined();
+    }
+  });
+  it('rejects non-Codespaces, invalid proxy domain and Docker launch', () => {
+    expect(parseRemoteConfig({ ...env, CODESPACES: 'false' }, false).config).toBeUndefined();
+    expect(parseRemoteConfig({ ...env, GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: 'example.com' }, false).config).toBeUndefined();
+    expect(parseRemoteConfig(env, true).config).toBeUndefined();
+  });
+});
+
 describe('RemoteSessions', () => {
   it('aceita o próprio token e recusa adulterado, vencido ou de outra senha', () => {
     let now = 1_800_000_000_000;
@@ -80,7 +106,7 @@ describe('RemoteSessions', () => {
     expect(maxAgeS).toBe(SESSION_MS / 1000);
     expect(sessions.verify(token)).toBe(true);
     expect(sessions.verify(token.slice(0, -1) + (token.endsWith('A') ? 'B' : 'A'))).toBe(false);
-    expect(sessions.verify(token.replace(/^v1\.\d+/, `v1.${now + SESSION_MS * 2}`))).toBe(false);
+    expect(sessions.verify(token.replace(/^v2\.\d+/, `v2.${now + SESSION_MS * 2}`))).toBe(false);
     expect(new RemoteSessions(SECRET, { ...CFG, passwordHashText: 'outro-hash' }, () => now).verify(token)).toBe(false);
     expect(sessions.verify(undefined)).toBe(false);
     expect(sessions.verify('lixo')).toBe(false);
@@ -94,7 +120,8 @@ describe('RemoteSessions', () => {
     const file = join(tmp.dir, 'data', 'remote-revoked.json');
     const sessions = new RemoteSessions(SECRET, CFG, () => now, file);
     const phone = sessions.issue().token;
-    const other = new RemoteSessions(SECRET, CFG, () => now + 1).issue().token;
+    const other = new RemoteSessions(SECRET, CFG, () => now).issue().token;
+    expect(phone).not.toBe(other);
     sessions.revoke(phone);
     sessions.revoke('lixo');
     expect(sessions.verify(phone)).toBe(false);
@@ -176,7 +203,7 @@ afterEach(async () => {
 });
 
 /** Uma porta local (sem login) e uma remota (com login), sobre a MESMA API, como no server/index.ts. */
-async function start(allow: RemoteFeature[] = ['permissions']): Promise<Harness> {
+async function start(allow: RemoteFeature[] = ['permissions'], secure = false): Promise<Harness> {
   const tmp = tempDir();
   const dir = join(tmp.dir, '.claude');
   mkdirSync(join(dir, 'sessions'), { recursive: true });
@@ -201,6 +228,7 @@ async function start(allow: RemoteFeature[] = ['permissions']): Promise<Harness>
   const worldCalls: string[] = [];
   const spawn = new SpawnService();
   const api = createApiHandler({
+    studio:new ProjectStudio({dir:join(tmp.dir,'studio'),env:{},run:async()=>({text:'Pesquisa de teste',sources:[]})}),
     office,
     hub,
     accounts,
@@ -232,7 +260,7 @@ async function start(allow: RemoteFeature[] = ['permissions']): Promise<Harness>
     },
   });
   const guard = createRequestGuard();
-  const gate = createRemoteGate({ config: CFG, sessions: new RemoteSessions(SECRET, CFG), secure: false });
+  const gate = createRemoteGate({ config: CFG, sessions: new RemoteSessions(SECRET, CFG), secure });
   const page = (_req: http.IncomingMessage, res: http.ServerResponse) => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end('<!doctype html><title>Habblaud</title>');
@@ -305,6 +333,38 @@ async function login(base: string): Promise<string> {
 }
 
 describe('porta remota', () => {
+  it('Kodexa projects require login and explicit messages permission',async()=>{
+    const h=await start(['permissions']);
+    expect((await request(h.remoteBase,'/api/studio')).status).toBe(401);
+    const cookie=await login(h.remoteBase);
+    expect((await request(h.remoteBase,'/api/studio',{headers:{Cookie:cookie,Host:'localhost'}})).status).toBe(403);
+    const t=await start(['messages']);
+    const c=await login(t.remoteBase),headers={Cookie:c};
+    const p=await request(t.remoteBase,'/api/studio/projects',{method:'POST',body:{brief:'Criar um aplicativo',research:false},headers});
+    expect(p.status).toBe(201);
+    const id=JSON.parse(p.body).id;
+    expect((await request(t.remoteBase,'/api/studio/projects/'+id+'/next',{method:'POST',body:{},headers})).status).toBe(202);
+    expect((await request(t.remoteBase,'/api/studio/projects/'+id+'/deliver',{method:'POST',body:{approved:true},headers})).status).toBe(403);
+    expect((await request(t.localBase,'/api/studio',{headers:{Host:'192.168.1.2'}})).status).toBe(403);
+  });
+  it('protects the mobile workspace and issues a Secure cookie behind HTTPS proxy', async () => {
+    const s = await start(['permissions'], true);
+    expect((await request(s.remoteBase, '/')).status).toBe(302);
+    expect((await request(s.remoteBase, '/api/health')).status).toBe(401);
+    const page = await request(s.remoteBase, '/login');
+    expect(page.body).toContain('Kodexa AI Studio');
+    expect(page.body).toContain('/assets/brand/kodexa-logo.svg');
+    expect((await request(s.remoteBase, '/assets/brand/kodexa-logo.svg')).status).toBe(200);
+    expect((await request(s.remoteBase, '/assets/brand/not-public.svg')).status).toBe(302);
+    const result = await request(s.remoteBase, '/api/remote/login', { method: 'POST', body: CREDS });
+    expect(result.status).toBe(200);
+    const raw = result.headers['set-cookie']?.[0] ?? '';
+    expect(raw).toMatch(/; Secure/);
+    const headers = { Cookie: raw.split(';')[0] };
+    expect((await request(s.remoteBase, '/api/health', { headers })).status).toBe(200);
+    expect((await request(s.remoteBase, '/api/remote/logout', { method: 'POST', headers, body: {} })).status).toBe(200);
+    expect((await request(s.remoteBase, '/api/health', { headers })).status).toBe(401);
+  });
   it('logado: terminal interativo, rotas do hook e do plugin e o auxiliar nunca passam, nem com Host local', async () => {
     const s = await start(['permissions', 'messages', 'terminal', 'spawn']);
     const cookie = await login(s.remoteBase);

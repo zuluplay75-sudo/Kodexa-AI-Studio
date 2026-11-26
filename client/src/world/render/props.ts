@@ -303,18 +303,26 @@ function totemSprite(): PropSprite {
   ctx.fillRect(3, 3, 8, 28);
   ctx.fillStyle = '#2a355a';
   ctx.fillRect(3, 3, 1, 28);
-  // faixa laranja no topo, "H" claro e "b" laranja (as cores de "Hab" e "blaud" na placa)
+  // Faixa laranja no topo, com K e X empilhados no painel.
   ctx.fillStyle = '#f2a33a';
   ctx.fillRect(3, 5, 8, 2);
   ctx.fillStyle = '#f5f1e6';
-  ctx.fillRect(4, 11, 1, 6);
-  ctx.fillRect(8, 11, 1, 6);
-  ctx.fillRect(5, 13, 3, 1);
+  ctx.fillRect(4, 11, 1, 5);
+  ctx.fillRect(7, 11, 1, 1);
+  ctx.fillRect(6, 12, 1, 1);
+  ctx.fillRect(5, 13, 1, 1);
+  ctx.fillRect(6, 14, 1, 1);
+  ctx.fillRect(7, 15, 1, 1);
   ctx.fillStyle = '#f2a33a';
-  ctx.fillRect(5, 19, 1, 6);
-  ctx.fillRect(6, 21, 2, 1);
-  ctx.fillRect(8, 22, 1, 2);
-  ctx.fillRect(6, 24, 2, 1);
+  ctx.fillRect(4, 19, 1, 1);
+  ctx.fillRect(8, 19, 1, 1);
+  ctx.fillRect(5, 20, 1, 1);
+  ctx.fillRect(7, 20, 1, 1);
+  ctx.fillRect(6, 21, 1, 1);
+  ctx.fillRect(5, 22, 1, 1);
+  ctx.fillRect(7, 22, 1, 1);
+  ctx.fillRect(4, 23, 1, 1);
+  ctx.fillRect(8, 23, 1, 1);
   // base
   ctx.fillStyle = '#8d96a3';
   ctx.fillRect(1, 31, 12, 2);

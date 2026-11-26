@@ -33,6 +33,8 @@ import type { NameStore, StoredCharacter } from './names';
 import { normalizeCwd, roomDisplayNames, SlotAllocator } from './rooms';
 import { tr } from '../../shared/i18n';
 import type { WorldMeta } from '../../shared/world/api';
+import {STUDIO_ROOM,STUDIO_ACCOUNT,studioRoster} from '../studio/office-view';
+import type {StudioInfo} from '../../shared/studio-project';
 
 export const OFFLINE_GRACE_MS = 20_000;
 export const DONE_GRACE_MS = 25_000;
@@ -196,6 +198,9 @@ const byStart = (a: ShellJob, b: ShellJob) => a.startedAt - b.startedAt || a.id.
 
 export class Office {
   private agents = new Map<string, AgentRecord>();
+  private managed=new Map<string,AgentRecord>();
+  private managedProvider='codex-cli';
+  private managedSince=0;
   private rooms = new Map<string, { path: string; createdAt: number }>();
   private slots = new SlotAllocator(SLOT_COOLDOWN_MS);
   private roomNames = new Map<string, string>();
@@ -293,11 +298,11 @@ export class Office {
   }
 
   roomName(roomId: string): string {
-    return this.roomNames.get(roomId) ?? roomId.split('/').filter(Boolean).pop() ?? roomId;
+    return roomId===STUDIO_ROOM?'Kodexa AI Studio':this.roomNames.get(roomId) ?? roomId.split('/').filter(Boolean).pop() ?? roomId;
   }
 
   detail(id: string): AgentDetail | undefined {
-    const rec = this.agents.get(id);
+    const rec = this.agents.get(id)??this.managed.get(id);
     if (rec) return { agent: cloneAgent(rec.info), history: rec.history.slice() };
     const demo = this.demoSnap?.agents.find((a) => a.id === id);
     return demo ? { agent: cloneAgent(demo), history: demo.recent.slice() } : undefined;
@@ -309,6 +314,25 @@ export class Office {
 
   isDemo(): boolean {
     return this.demo !== null;
+  }
+
+  syncStudio(info:StudioInfo):void{
+    const now=this.now(),initial=this.managed.size===0;
+    if(initial)this.managedSince=now;
+    let changed=initial||this.managedProvider!==info.provider;
+    this.managedProvider=info.provider;
+    for(const next of studioRoster(info,now)){
+      const prev=this.managed.get(next.id);
+      if(prev&&JSON.stringify(prev.info.managed)===JSON.stringify(next.managed)&&prev.info.provider===next.provider)continue;
+      const act=next.activity!;act.id+=':'+ ++this.seq;
+      const history=[...(prev?.history??[]),act].slice(-HISTORY_LIMIT);
+      next.recent=history.slice(-RECENT_LIMIT);
+      if(prev&&prev.info.status===next.status)next.statusSince=prev.info.statusSince;
+      this.managed.set(next.id,{info:next,history});
+      if(!initial)this.pushFeed([{id:act.id,agentId:next.id,roomId:STUDIO_ROOM,agentName:next.name,roomName:this.roomName(STUDIO_ROOM),account:STUDIO_ACCOUNT,activity:act}]);
+      changed=true;
+    }
+    if(changed)this.markDirty();
   }
 
   // ---------------------------------------------------------------- agentes principais
@@ -954,6 +978,7 @@ export class Office {
   private build(): OfficeSnapshot {
     const now = this.now();
     const entries = new Map(this.rooms);
+    if(this.managed.size)entries.set(STUDIO_ROOM,{path:'Equipe gerenciada · Projetos IA',createdAt:this.managedSince});
     for (const r of this.demoSnap?.rooms ?? []) entries.set(r.id, { path: r.path, createdAt: r.createdAt });
     this.slots.sync(entries.keys(), now);
     const rooms: RoomInfo[] = [...entries]
@@ -964,6 +989,7 @@ export class Office {
         slot: this.slots.slotOf(id) ?? 0,
         seed: hash32(id),
         createdAt: r.createdAt,
+        ...(id===STUDIO_ROOM?{managed:true}:{}),
       }))
       .sort((a, b) => a.slot - b.slot);
     // festa/alarme (eventos do GitHub): das salas reais ou do demo
@@ -990,8 +1016,8 @@ export class Office {
       rev: this.rev,
       serverTime: now,
       rooms,
-      agents: [...real, ...demoAgents].map(trim),
-      accounts: [...this.deps.accounts(sessions), ...(this.demoSnap?.accounts ?? [])],
+      agents: [...real,...[...this.managed.values()].map(r=>cloneAgent(r.info)), ...demoAgents].map(trim),
+      accounts: [...this.deps.accounts(sessions), ...(this.managed.size?[{id:STUDIO_ACCOUNT,provider:this.managedProvider==='anthropic'?'claude' as const:'codex' as const,short:'K',name:'Kodexa · '+this.managedProvider,color:'#818cf8',configDir:'',sessions:[...this.managed.values()].filter(r=>r.info.status==='working').length,usageStatus:'disabled' as const}]:[]), ...(this.demoSnap?.accounts ?? [])],
       ...(ptys ? { ptys: ptys.list } : {}),
       meta: {
         demo: this.isDemo(),

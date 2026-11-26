@@ -9,7 +9,7 @@ import type { CityScene } from './world/city';
 import { migrateLegacyKeys, safeLocalStorage } from './ui/prefs';
 import { getLocale, tr } from '../../shared/i18n';
 
-export function start(): void {
+export function start(): OfficeStore {
   // Antes de tudo: o mundo (carteiras) e a UI (preferências) leem o localStorage ao serem criados.
   migrateLegacyKeys(safeLocalStorage());
 
@@ -44,7 +44,9 @@ export function start(): void {
   }
 
   // Facilita a depuração pelo console do navegador.
-  Object.assign(window, { habblaud: { store, world, city } });
+  const studioDebug = { store, world, city };
+  Object.assign(window, { kodexa: studioDebug, habblaud: studioDebug });
+  return store;
 }
 
 /**

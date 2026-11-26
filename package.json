@@ -1,14 +1,14 @@
 {
-  "name": "habblaud",
+  "name": "kodexa-ai-studio",
   "version": "1.0.3",
   "private": true,
-  "description": "Escritório virtual animado que mostra, em tempo real, o que seus agentes do Claude Code estão fazendo.",
+  "description": "Kodexa AI Studio — escritório virtual para agentes Claude Code e Codex.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/marmottajr/habblaud.git"
+    "url": "git+https://github.com/zuluplay75-sudo/Kodexa-AI-Studio.git"
   },
-  "homepage": "https://github.com/marmottajr/habblaud#readme",
+  "homepage": "https://github.com/zuluplay75-sudo/Kodexa-AI-Studio#readme",
   "type": "module",
   "engines": {
     "node": ">=22.12"
@@ -25,6 +25,7 @@
     "start": "node dist/server/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p server/tsconfig.json",
     "test": "vitest run",
+    "academy": "tsx server/academy/cli.ts",
     "i18n:check": "tsx scripts/i18n-check.ts",
     "docker:up": "tsx scripts/docker-up.ts",
     "docker:down": "tsx scripts/docker-up.ts --down",
@@ -32,6 +33,7 @@
     "usage:install": "tsx scripts/statusline-install.ts install",
     "usage:uninstall": "tsx scripts/statusline-install.ts uninstall",
     "usage:status": "tsx scripts/statusline-install.ts status",
+    "usage:claude": "tsx scripts/kodexa-claude-usage.ts",
     "hooks:install": "tsx scripts/hooks-install.ts install",
     "hooks:uninstall": "tsx scripts/hooks-install.ts uninstall",
     "hooks:status": "tsx scripts/hooks-install.ts status",
@@ -44,7 +46,10 @@
     "codex:bridge": "tsx scripts/codex-bridge.ts",
     "remote:setup": "tsx scripts/remote-setup.ts",
     "remote:mdns": "tsx scripts/remote-mdns.ts",
-    "release": "tsx scripts/release.ts"
+    "release": "tsx scripts/release.ts",
+    "start:real": "HABBLAUD_DEMO=0 KODEXA_DEMO=0 npm start",
+    "login:setup": "tsx scripts/kodexa-login.ts setup",
+    "start:mobile": "tsx scripts/kodexa-login.ts start"
   },
   "devDependencies": {
     "@fontsource/pixelify-sans": "^5.3.0",
