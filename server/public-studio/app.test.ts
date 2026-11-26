@@ -65,11 +65,16 @@ it('isolates authenticated projects, consumes the OAuth flow and revokes session
     expect(params.get('code_challenge')).toMatch(/^[\w-]{43}$/);
     const flow = start.headers.getSetCookie()[0].split(';')[0];
     const path = '/public/google/callback?' + new URLSearchParams({ code, state: params.get('state')! });
-    const result = await request(path, { headers: { Cookie: flow } });
+    const overlapping = await request('/public/google');
+    const otherFlow = overlapping.headers.getSetCookie()[0].split(';')[0];
+    expect(otherFlow.split('=')[0]).not.toBe(flow.split('=')[0]);
+    const withoutBinding = await request(path, { headers: { Cookie: otherFlow } });
+    expect(withoutBinding.headers.get('location')).toBe('/public/?login=expired');
+    const result = await request(path, { headers: { Cookie: otherFlow + '; ' + flow } });
     expect(result.status).toBe(303);
     const session = result.headers.getSetCookie()[1];
     expect(session).toContain('HttpOnly; Secure');
-    expect((await request(path, { headers: { Cookie: flow } })).status).toBe(400);
+    expect((await request(path, { headers: { Cookie: flow } })).headers.get('location')).toBe('/public/?login=expired');
     return session.split(';')[0];
   }
 

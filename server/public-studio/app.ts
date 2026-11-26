@@ -7,7 +7,7 @@ import { ProjectError, ProjectStudio } from '../studio/projects';
 import { publicStudioPage, publicStudioScript, publicStudioStyles } from './page';
 import { googleLogin, googleSubject, opaqueToken, sameToken, type GoogleConfig } from './google';
 
-const flowCookie = '__Host-kodexa-google';
+const flowCookiePrefix = '__Host-kodexa-google-';
 const sessionCookie = '__Host-kodexa-public';
 const loginLifetime = 300;
 const sessionLifetime = 8 * 3600;
@@ -130,20 +130,21 @@ export function createPublicStudio(options: {
       const flow = googleLogin(google);
       const id = opaqueToken();
       flows.set(id, { state: flow.state, verifier: flow.verifier, expires: now + loginLifetime * 1000 });
-      res.setHeader('Set-Cookie', cookie(flowCookie, id, loginLifetime));
+      res.setHeader('Set-Cookie', cookie(flowCookiePrefix + flow.state, id, loginLifetime));
       return redirect(res, flow.url.href);
     }
 
     if (method === 'GET' && url.pathname === '/public/google/callback') {
-      const id = readCookie(req, flowCookie);
+      const state = url.searchParams.get('state') ?? '';
+      const name = flowCookiePrefix + state;
+      const id = /^[A-Za-z0-9_-]{43}$/.test(state) ? readCookie(req, name) : '';
       const flow = flows.get(id);
+      if (!flow || !sameToken(flow.state, state)) return redirect(res, '/public/?login=expired');
       flows.delete(id);
-      res.setHeader('Set-Cookie', cookie(flowCookie, '', 0));
+      res.setHeader('Set-Cookie', cookie(name, '', 0));
+      if (url.searchParams.has('error')) return redirect(res, '/public/?login=denied');
       const code = url.searchParams.get('code');
-      const state = url.searchParams.get('state');
-      if (!flow || !state || !sameToken(flow.state, state) || !code || code.length > 4096) {
-        return json(res, 400, { error: 'Autorização inválida ou expirada.' });
-      }
+      if (!code || code.length > 4096) return redirect(res, '/public/?login=expired');
       if (googleExchanges >= maxGoogleExchanges) {
         res.setHeader('Retry-After', '5');
         return json(res, 503, { error: 'O login está ocupado. Comece novamente em alguns segundos.' });
@@ -153,7 +154,7 @@ export function createPublicStudio(options: {
       try {
         user = await googleSubject(google, code, flow.verifier, options.fetcher);
       } catch {
-        return json(res, 502, { error: 'Não foi possível confirmar o login com Google. Comece novamente.' });
+        return redirect(res, '/public/?login=provider');
       } finally {
         googleExchanges--;
       }
@@ -161,7 +162,7 @@ export function createPublicStudio(options: {
       sessions.delete(readCookie(req, sessionCookie));
       const session = opaqueToken();
       sessions.set(session, { user, expires: clock() + sessionLifetime * 1000 });
-      res.setHeader('Set-Cookie', [cookie(flowCookie, '', 0), cookie(sessionCookie, session, sessionLifetime)]);
+      res.setHeader('Set-Cookie', [cookie(name, '', 0), cookie(sessionCookie, session, sessionLifetime)]);
       return redirect(res, '/public/');
     }
 

@@ -214,5 +214,12 @@ document.getElementById('logout').addEventListener('click', async () => {
     await refresh();
   } catch (error) { showError(error); }
 });
+const loginResult = new URLSearchParams(location.search).get('login');
+const loginMessages = {
+  expired: 'A tentativa de login expirou. Toque em Entrar com Google para começar novamente.',
+  denied: 'O Google não autorizou o login. Tente novamente com uma conta cadastrada para teste.',
+  provider: 'O Kodexa não conseguiu confirmar o login com o Google. Tente novamente.',
+};
+if (Object.hasOwn(loginMessages, loginResult)) status.textContent = loginMessages[loginResult];
 refresh().then(refreshConnection).catch(showError);
 `;
