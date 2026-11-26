@@ -14,7 +14,7 @@ export const CURRICULUM = [
 ] as const;
 export type Role = typeof CURRICULUM[number]['id'];
 export type VideoCandidate = { id: string; url: string; title: string; channel: string; publishedAt: string; status: 'discovered' };
-export type Note = { role: Role; source: string; kind: 'documentation' | 'transcript'; createdAt: string; text: string; validated: false };
+export type Note = { role: Role; source: string; kind: 'documentation' | 'transcript' | 'video'; createdAt: string; text: string; validated: false };
 type Job = { role: Role; status: 'pending' | 'processed' | 'failed'; attemptedDay?: string; processedAt?: string; error?: string; videoAttemptedDay?: string; videoCheckedAt?: string; videoError?: string; videos: VideoCandidate[] };
 export type AcademyState = { schema: 1; jobs: Job[]; notes: Note[]; budget: { day: string; modelCalls: number; searches: number } };
 type Fetcher = typeof fetch;
@@ -202,6 +202,22 @@ async function studyTranscriptLocked(options: Options, role: Role, source: strin
   state.notes.push(note);
   await saveAcademy(options.dir, state);
   return note;
+}
+
+/** Record a real audiovisual analysis, sharing the existing daily model budget and lock. */
+export async function studyVideo(options:Options,role:Role,source:string,analyze:()=>Promise<string>):Promise<Note>{
+ return withAcademyLock(options.dir,async()=>{
+  const env=options.env??process.env;
+  if(env.KODEXA_ACADEMY_VIDEO!=='1'||!CURRICULUM.some(r=>r.id===role)||!source.trim()||source.length>500)throw Error('Video study disabled or invalid');
+  const now=dateOf(options),day=now.toISOString().slice(0,10),state=await loadAcademy(options.dir,day);
+  budgetDay(state,day);
+  if(state.budget.modelCalls>=limit(env.KODEXA_ACADEMY_DAILY_MODEL_CALLS,4,16))throw Error('Daily model budget reached');
+  state.budget.modelCalls++;await saveAcademy(options.dir,state);
+  const text=await analyze();
+  if(typeof text!=='string'||!text.trim())throw Error('Empty video analysis');
+  const note:Note={role,source,kind:'video',createdAt:now.toISOString(),text:text.trim().slice(0,MAX_NOTE),validated:false};
+  state.notes.push(note);await saveAcademy(options.dir,state);return note;
+ });
 }
 
 export function startAcademy(options: Options, warn: () => void): () => void {
