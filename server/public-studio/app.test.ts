@@ -14,6 +14,10 @@ it('isolates authenticated projects, consumes the OAuth flow and revokes session
       const body = init?.body as URLSearchParams;
       return Response.json({ access_token: body.get('code') });
     }
+    if (url === 'https://api.openai.com/v1/responses') {
+      expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer private-test-key');
+      return Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: 'Pesquisa concluída' }] }] });
+    }
     expect(url).toBe('https://openidconnect.googleapis.com/v1/userinfo');
     return Response.json({ sub: new Headers(init?.headers).get('Authorization')?.slice(7) });
   });
@@ -70,7 +74,26 @@ it('isolates authenticated projects, consumes the OAuth flow and revokes session
       body: JSON.stringify({ brief: 'Projeto privado para oficina', research: false }),
     });
     expect((await create('https://other.example.test')).status).toBe(403);
-    expect((await create(origin)).status).toBe(201);
+    const created = await create(origin);
+    expect(created.status).toBe(201);
+    const project = await created.json();
+    const post = (path: string, session: string, body: unknown) => request(path, {
+      method: 'POST',
+      headers: { Cookie: session, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const next = '/public/projects/' + project.id + '/next';
+    expect((await post(next, first, {})).status).toBe(409);
+    const connected = await post('/public/provider', first, { provider: 'openai', model: 'test-model', key: 'private-test-key' });
+    expect(await connected.json()).toEqual({ provider: 'openai', model: 'test-model' });
+    expect(await (await request('/public/provider', { headers: { Cookie: second } })).json()).toBeNull();
+    expect((await post(next, first, {})).status).toBe(202);
+    await vi.waitFor(async () => {
+      const response = await request('/public/projects', { headers: { Cookie: first } });
+      expect((await response.json())[0].state).toBe('approval');
+    });
+    expect((await post('/public/projects/' + project.id + '/approve', second, { decision: 'Outra conta' })).status).toBe(404);
+    expect((await post('/public/projects/' + project.id + '/approve', first, { decision: 'Minha decisão' })).status).toBe(200);
     const list = (session: string) => request('/public/projects', { headers: { Cookie: session } });
     expect(await (await list(first)).json()).toHaveLength(1);
     expect(await (await list(second)).json()).toEqual([]);

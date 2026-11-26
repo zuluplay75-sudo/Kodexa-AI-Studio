@@ -283,21 +283,30 @@ export class ProjectStudio {
       }
     }
     if(selected!=='default'||!c.configured)throw Error('Provedor indisponível.');
-    const anthropic=c.provider==='anthropic';
-    const response=await (this.options.fetcher??fetch)(anthropic?'https://api.anthropic.com/v1/messages':'https://api.openai.com/v1/responses',{
-      method:'POST',redirect:'error',signal:AbortSignal.timeout(90000),
-      headers:anthropic?{'Content-Type':'application/json','x-api-key':c.key!,'anthropic-version':'2023-06-01'}:{'Content-Type':'application/json',Authorization:'Bearer '+c.key},
-      body:JSON.stringify(anthropic?{model:c.model,max_tokens:3000,system,messages:[{role:'user',content:input}]}:{model:c.model,instructions:system,input,max_output_tokens:4000,store:false,...(web?{tools:[{type:'web_search'}],tool_choice:'required'}:{})})
-    });
-    if(!response.ok) throw new Error('Provider error');
-    const data=await response.json() as any;
-    // A partial report must not unlock the next role or be recorded as completed.
-    if(anthropic ? data?.stop_reason!=='end_turn' : data?.status!=='completed') throw new Error('Provider incomplete');
-    const parts:any[]=anthropic?(data.content??[]):(data.output??[]).filter((x:any)=>x.type==='message').flatMap((x:any)=>x.content??[]);
-    if(web && !(data.output??[]).some((x:any)=>x.type==='web_search_call'&&x.status==='completed')) throw new Error('No web research');
-    const text=parts.filter(x=>x?.type===(anthropic?'text':'output_text')&&typeof x.text==='string').map(x=>x.text).join('\n');
-    if(!text.trim())throw new Error('Provider empty');
-    const sources:string[]=[...new Set<string>(parts.flatMap(x=>(x.annotations??[]).filter((a:any)=>a.type==='url_citation'&&typeof a.url==='string'&&/^https?:\/\//.test(a.url)).map((a:any)=>a.url)))];
-    return {text,sources,provider:c.provider};
+    return callPlanningApi(c,system,input,web,this.options.fetcher);
   }
+}
+
+/** Planning response adapter shared by the owner and isolated public studio. */
+export async function callPlanningApi(
+  c: {provider:string; model:string; key?:string},
+  system:string,input:string,web:boolean,fetcher:typeof fetch=fetch,
+):Promise<Awaited<ReturnType<Run>>> {
+  if(!c.key||!['openai','anthropic'].includes(c.provider))throw new Error('Provedor não configurado.');
+  const anthropic=c.provider==='anthropic';
+  const response=await fetcher(anthropic?'https://api.anthropic.com/v1/messages':'https://api.openai.com/v1/responses',{
+    method:'POST',redirect:'error',signal:AbortSignal.timeout(90000),
+    headers:anthropic?{'Content-Type':'application/json','x-api-key':c.key,'anthropic-version':'2023-06-01'}:{'Content-Type':'application/json',Authorization:'Bearer '+c.key},
+    body:JSON.stringify(anthropic?{model:c.model,max_tokens:3000,system,messages:[{role:'user',content:input}]}:{model:c.model,instructions:system,input,max_output_tokens:4000,store:false,...(web?{tools:[{type:'web_search'}],tool_choice:'required'}:{})})
+  });
+  if(!response.ok) throw new Error('Provider error');
+  const data=await response.json() as any;
+  // A partial report must not unlock the next role or be recorded as completed.
+  if(anthropic ? data?.stop_reason!=='end_turn' : data?.status!=='completed') throw new Error('Provider incomplete');
+  const parts:any[]=anthropic?(data.content??[]):(data.output??[]).filter((x:any)=>x.type==='message').flatMap((x:any)=>x.content??[]);
+  if(web && !(data.output??[]).some((x:any)=>x.type==='web_search_call'&&x.status==='completed')) throw new Error('No web research');
+  const text=parts.filter(x=>x?.type===(anthropic?'text':'output_text')&&typeof x.text==='string').map(x=>x.text).join('\n');
+  if(!text.trim())throw new Error('Provider empty');
+  const sources:string[]=[...new Set<string>(parts.flatMap(x=>(x.annotations??[]).filter((a:any)=>a.type==='url_citation'&&typeof a.url==='string'&&/^https?:\/\//.test(a.url)).map((a:any)=>a.url)))];
+  return {text,sources,provider:c.provider};
 }

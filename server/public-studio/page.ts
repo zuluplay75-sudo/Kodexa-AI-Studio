@@ -10,6 +10,15 @@ export const publicStudioPage = `<!doctype html>
 <a id="login" href="/public/google" hidden>Entrar com Google</a>
 <section id="projects" hidden>
 <button id="logout" type="button">Sair</button>
+<details><summary>Minha IA</summary>
+<form id="provider">
+<label for="vendor">Provedor</label><select id="vendor"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select>
+<label for="model">Modelo</label><input id="model" required maxlength="101">
+<label for="key">Chave de API</label><input id="key" type="password" autocomplete="off" required maxlength="512">
+<button type="submit">Conectar IA</button>
+<button id="disconnect" type="button" hidden>Desconectar IA</button>
+<p id="connection"></p>
+</form></details>
 <form id="create"><label for="brief">Descreva seu projeto</label>
 <textarea id="brief" minlength="10" maxlength="4000" required></textarea>
 <button type="submit">Criar projeto</button></form><ul id="list"></ul>
@@ -24,7 +33,7 @@ main > p:first-child { color: #8cd8ff; font-weight: 650; margin-bottom: 0; }
 h1 { margin-top: .25rem; }
 a, button { color: inherit; background: #253754; border: 1px solid #657da3; border-radius: .5rem; padding: .65rem 1rem; font: inherit; cursor: pointer; }
 form { display: grid; gap: .75rem; margin: 2rem 0; }
-textarea { font: inherit; background: #17223a; color: inherit; border: 1px solid #657da3; border-radius: .5rem; padding: .75rem; min-height: 6rem; }
+input, select, textarea { font: inherit; background: #17223a; color: inherit; border: 1px solid #657da3; border-radius: .5rem; padding: .75rem; } textarea { min-height: 6rem; }
 form button { justify-self: start; }
 ul { padding: 0; list-style: none; }
 li { background: #17223a; padding: .85rem; margin: .5rem 0; border-radius: .5rem; overflow-wrap: anywhere; }
@@ -38,19 +47,106 @@ const status = document.getElementById('status');
 const brief = document.getElementById('brief');
 const create = document.getElementById('create');
 const submit = create.querySelector('button');
+const provider = document.getElementById('provider');
+const vendor = document.getElementById('vendor');
+const model = document.getElementById('model');
+const key = document.getElementById('key');
+const connection = document.getElementById('connection');
+const disconnect = document.getElementById('disconnect');
+let polling;
+let drafts = new Map();
+
+async function post(path, body) {
+  const response = await fetch(path, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  });
+  if (!response.ok) throw new Error((await response.json()).error);
+  return response;
+}
+
+async function refreshConnection() {
+  const response = await fetch('/public/provider');
+  if (!response.ok) return;
+  const saved = await response.json();
+  connection.textContent = saved ? 'Conectada: ' + saved.provider + ' · ' + saved.model : 'Conecte sua própria conta de IA.';
+  disconnect.hidden = !saved;
+}
+
+provider.addEventListener('submit', async event => {
+  event.preventDefault();
+  status.textContent = '';
+  try {
+    await post('/public/provider', { provider: vendor.value, model: model.value.trim(), key: key.value.trim() });
+    await refreshConnection();
+  } catch (error) { showError(error); }
+  finally { key.value = ''; }
+});
+disconnect.addEventListener('click', async () => {
+  try {
+    await post('/public/provider', { disconnect: true });
+    await refreshConnection();
+  } catch (error) { showError(error); }
+});
+
+function renderProject(project) {
+  const row = document.createElement('li');
+  const title = document.createElement('h2');
+  title.textContent = project.brief;
+  row.append(title);
+  for (const stage of project.stages) {
+    const details = document.createElement('details');
+    const summary = document.createElement('summary');
+    const report = document.createElement('p');
+    summary.textContent = stage.role + ' · ' + stage.provider;
+    report.textContent = stage.text;
+    details.append(summary, report);
+    row.append(details);
+  }
+  if (project.error) {
+    const report = document.createElement('p');
+    report.textContent = project.error;
+    row.append(report);
+  }
+  if (project.state === 'running') {
+    row.append('Planejamento em andamento…');
+  } else if (project.state === 'complete') {
+    row.append('Planejamento concluído.');
+  } else {
+    const approve = project.state === 'approval';
+    const decision = document.createElement('textarea');
+    decision.setAttribute('aria-label', 'Decisão sobre a pesquisa');
+    decision.maxLength = 4000;
+    decision.value = drafts.get(project.id) || '';
+    decision.addEventListener('input', () => drafts.set(project.id, decision.value));
+    const button = document.createElement('button');
+    button.textContent = approve ? 'Aprovar pesquisa' : 'Executar próxima etapa';
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      status.textContent = '';
+      try {
+        await post('/public/projects/' + project.id + (approve ? '/approve' : '/next'), approve ? { decision: decision.value } : {});
+        if (approve) drafts.delete(project.id);
+        await refresh();
+      } catch (error) { showError(error); }
+      finally { button.disabled = false; }
+    });
+    if (approve) row.append(decision);
+    row.append(button);
+  }
+  return row;
+}
 
 async function refresh() {
+  clearTimeout(polling);
   const response = await fetch('/public/projects');
   login.hidden = response.status !== 401;
   projects.hidden = !response.ok;
   if (response.status === 401) return;
   if (!response.ok) throw new Error('Não foi possível abrir os projetos.');
   const rows = await response.json();
-  list.replaceChildren(...(rows.length ? rows.map(project => project.brief) : ['Nenhum projeto criado.']).map(text => {
-    const row = document.createElement('li');
-    row.textContent = text;
-    return row;
-  }));
+  if (rows.length) list.replaceChildren(...rows.map(renderProject));
+  else list.textContent = 'Nenhum projeto criado.';
+  if (rows.some(project => project.state === 'running')) polling = setTimeout(() => refresh().catch(showError), 2500);
 }
 
 function showError(error) { status.textContent = error.message; }
@@ -74,9 +170,13 @@ document.getElementById('logout').addEventListener('click', async () => {
     const response = await fetch('/public/logout', { method: 'POST' });
     if (!response.ok && response.status !== 401) throw new Error('Não foi possível sair.');
     list.replaceChildren();
+    drafts.clear();
+    provider.reset();
+    connection.textContent = '';
+    disconnect.hidden = true;
     create.reset();
     await refresh();
   } catch (error) { showError(error); }
 });
-refresh().catch(showError);
+refresh().then(refreshConnection).catch(showError);
 `;
