@@ -30,7 +30,8 @@ it('isolates authenticated projects, consumes the OAuth flow and revokes session
     expect(url).toBe('https://openidconnect.googleapis.com/v1/userinfo');
     return Response.json({ sub: new Headers(init?.headers).get('Authorization')?.slice(7) });
   });
-  const server = createPublicStudio({ origin, dir, clientId: 'fake', clientSecret: 'fake', fetcher: google });
+  let clock = Date.now();
+  const server = createPublicStudio({ origin, dir, clientId: 'fake', clientSecret: 'fake', fetcher: google, now: () => clock });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const address = server.address();
@@ -73,6 +74,8 @@ it('isolates authenticated projects, consumes the OAuth flow and revokes session
   }
 
   try {
+    const health = await request('/public/health');
+    expect(await health.json()).toEqual({ status: 'ok' });
     const page = await request('/public/');
     expect(await page.text()).toContain('Minhas IAs');
     expect(page.headers.get('content-security-policy')).toContain("script-src 'self'");
@@ -127,6 +130,17 @@ it('isolates authenticated projects, consumes the OAuth flow and revokes session
     expect((await post(next, second, {})).status).toBe(404);
     const disconnected = await post('/public/provider', first, { disconnect: true, provider: 'gemini' });
     expect((await disconnected.json()).assignments).toEqual({ manager: 'anthropic' });
+    clock += 60_000;
+    for (let i = 0; i < 30; i++) {
+      expect((await post('/public/provider', first, { assign: true, role: 'default', provider: 'openai' })).status).toBe(200);
+    }
+    const limited = await post('/public/provider', first, { assign: true, role: 'default', provider: 'openai' });
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get('retry-after')).toBe('60');
+    expect((await post('/public/provider', second, { provider: 'gemini', model: 'test-gemini', key: 'other-gemini-key' })).status).toBe(200);
+    clock += 60_000;
+    expect((await post('/public/provider', first, { assign: true, role: 'default', provider: 'openai' })).status).toBe(200);
+
 
     expect((await request('/public/logout', { method: 'POST', headers: { Cookie: first, Origin: origin } })).status).toBe(200);
     expect((await list(first)).status).toBe(401);

@@ -11,6 +11,10 @@ const flowCookie = '__Host-kodexa-google';
 const sessionCookie = '__Host-kodexa-public';
 const loginLifetime = 300;
 const sessionLifetime = 8 * 3600;
+const mutationWindowMs = 60_000;
+const mutationLimit = 30;
+const maxGoogleExchanges = 16;
+type MutationWindow = { count: number; expires: number };
 type Flow = { state: string; verifier: string; expires: number };
 type Session = { user: string; expires: number };
 type Provider = Connection['provider'];
@@ -52,6 +56,7 @@ export function createPublicStudio(options: {
   clientId: string;
   clientSecret: string;
   fetcher?: typeof fetch;
+  now?: () => number;
 }) {
   const origin = new URL(options.origin);
   if (origin.protocol !== 'https:' || origin.origin !== options.origin || !options.clientId || !options.clientSecret) {
@@ -66,11 +71,21 @@ export function createPublicStudio(options: {
   const sessions = new Map<string, Session>();
   const studios = new Map<string, ProjectStudio>();
   const preferences = new Map<string, Preferences>();
+  const mutations = new Map<string, MutationWindow>();
+  const clock = options.now ?? Date.now;
+  let googleExchanges = 0;
 
-  return createServer((req, res) => {
+  return createServer({
+    headersTimeout: 10_000,
+    requestTimeout: 15_000,
+    connectionsCheckingInterval: 1_000,
+    keepAliveTimeout: 5_000,
+    maxHeaderSize: 16 * 1024,
+  }, (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000');
     res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
     void route(req, res).catch(error => {
       if (res.headersSent) return res.destroy();
@@ -86,14 +101,17 @@ export function createPublicStudio(options: {
     const url = new URL(req.url, origin);
     if (url.origin !== origin.origin) return json(res, 400, { error: 'Endereço inválido.' });
     const method = req.method;
-    const now = Date.now();
+    const now = clock();
     prune(flows, now);
     prune(sessions, now);
+    prune(mutations, now);
     const activeUsers = new Set([...sessions.values()].map(session => session.user));
     for (const user of preferences.keys()) if (!activeUsers.has(user)) preferences.delete(user);
     if (method === 'POST' && req.headers.origin !== origin.origin) {
       return json(res, 403, { error: 'Origem não autorizada.' });
     }
+
+    if (method === 'GET' && url.pathname === '/public/health') return json(res, 200, { status: 'ok' });
 
     if (method === 'GET') {
       const resource = url.pathname === '/public/' ? ['text/html', publicStudioPage] :
@@ -126,11 +144,23 @@ export function createPublicStudio(options: {
       if (!flow || !state || !sameToken(flow.state, state) || !code || code.length > 4096) {
         return json(res, 400, { error: 'Autorização inválida ou expirada.' });
       }
-      const user = await googleSubject(google, code, flow.verifier, options.fetcher);
+      if (googleExchanges >= maxGoogleExchanges) {
+        res.setHeader('Retry-After', '5');
+        return json(res, 503, { error: 'O login está ocupado. Comece novamente em alguns segundos.' });
+      }
+      googleExchanges++;
+      let user: string;
+      try {
+        user = await googleSubject(google, code, flow.verifier, options.fetcher);
+      } catch {
+        return json(res, 502, { error: 'Não foi possível confirmar o login com Google. Comece novamente.' });
+      } finally {
+        googleExchanges--;
+      }
       if (sessions.size >= 1024) return json(res, 503, { error: 'Tente de novo mais tarde.' });
       sessions.delete(readCookie(req, sessionCookie));
       const session = opaqueToken();
-      sessions.set(session, { user, expires: now + sessionLifetime * 1000 });
+      sessions.set(session, { user, expires: clock() + sessionLifetime * 1000 });
       res.setHeader('Set-Cookie', [cookie(flowCookie, '', 0), cookie(sessionCookie, session, sessionLifetime)]);
       return redirect(res, '/public/');
     }
@@ -150,11 +180,22 @@ export function createPublicStudio(options: {
       return json(res, 200, { ok: true });
     }
 
+    if (method === 'POST') {
+      const limit = mutations.get(session.user) ?? { count: 0, expires: now + mutationWindowMs };
+      if (limit.count >= mutationLimit) {
+        req.resume();
+        res.setHeader('Retry-After', String(Math.ceil((limit.expires - now) / 1000)));
+        return json(res, 429, { error: 'Muitas alterações em pouco tempo. Aguarde e tente novamente.' });
+      }
+      limit.count++;
+      mutations.set(session.user, limit);
+    }
+
     if (url.pathname === '/public/provider') {
       let prefs = preferences.get(session.user);
       if (method === 'POST') {
         const body = await readJson(req, 2048) as { provider?: unknown; role?: unknown; disconnect?: unknown; assign?: unknown } | null;
-        if (!sessions.has(sessionId)) return json(res, 401, { error: 'Entre com Google.' });
+        if (sessions.get(sessionId) !== session || session.expires <= clock()) return json(res, 401, { error: 'Entre com Google.' });
         prefs ??= { connections: new Map(), assignments: new Map() };
         if (body?.disconnect === true) {
           if (!isProvider(body.provider)) throw new ProjectError(400, 'Selecione a IA a desconectar.');
@@ -205,7 +246,7 @@ export function createPublicStudio(options: {
     }
     if (method === 'GET') return json(res, 200, studio.info().projects);
     const body = await readJson(req, 16 * 1024);
-    if (!sessions.has(sessionId)) return json(res, 401, { error: 'Entre com Google.' });
+    if (sessions.get(sessionId) !== session || session.expires <= clock()) return json(res, 401, { error: 'Entre com Google.' });
     if (action?.[2] === 'approve') return json(res, 200, studio.approve(action[1], (body as { decision?: unknown } | null)?.decision));
     if (action?.[2] === 'next') {
       const project = studio.info().projects.find(candidate => candidate.id === action[1]);
