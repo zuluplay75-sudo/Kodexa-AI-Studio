@@ -308,7 +308,7 @@ function esc(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-export function loginPage(opts: { caDownload: boolean }): string {
+export function loginPage(opts: { caDownload: boolean; publicGoogle?: boolean }): string {
   const ca = opts.caDownload
     ? `<p class="ca">${esc(tr('Primeira vez neste celular?'))} <a href="${CA_PATH}" download="habblaud-ca.crt">${esc(tr('Instale o certificado do Habblaud'))}</a> ${esc(tr('para tirar o aviso de segurança (confira a impressão digital que o npm run remote:setup mostrou).'))}</p>`
     : '';
@@ -343,6 +343,9 @@ export function loginPage(opts: { caDownload: boolean }): string {
   input:focus { outline: none; border-color: #f4c95d; }
   button { width: 100%; margin-top: 20px; padding: 12px; font: inherit; font-weight: 700; color: #14161f; background: #f4c95d;
            border: 0; border-radius: 6px; cursor: pointer; }
+  .google-login { display: block; margin-top: 12px; padding: 12px; border: 1px solid #737d99;
+                  border-radius: 6px; text-align: center; text-decoration: none; color: #e8e6df; }
+  .google-login:hover, .google-login:focus-visible { border-color: #f4c95d; }
   button:disabled { opacity: .6; cursor: wait; }
   #err { min-height: 20px; margin-top: 12px; color: #ff8a80; font-size: 13px; }
 </style>
@@ -357,6 +360,7 @@ export function loginPage(opts: { caDownload: boolean }): string {
   <label for="p">${esc(tr('Senha'))}</label>
   <input id="p" name="password" type="password" autocomplete="current-password" required>
   <button id="b" type="submit">${esc(tr('Entrar'))}</button>
+  ${opts.publicGoogle ? '<a class="google-login" href="https://studio.kodexa.ia.br/public/google">Entrar com Google</a>' : ''}
   <div id="err" role="alert"></div>
   ${ca}
 </form>
@@ -397,7 +401,7 @@ function cookieHeader(value: string, maxAgeS: number, secure: boolean): string {
 }
 
 export interface RemoteGateDeps {
-  config: Pick<RemoteConfig, 'user' | 'passwordHash'>;
+  config: Pick<RemoteConfig, 'user' | 'passwordHash' | 'codespaceProxyHost'>;
   sessions: RemoteSessions;
   /** Cookie com Secure (a porta fala HTTPS). */
   secure: boolean;
@@ -501,7 +505,7 @@ export function createRemoteGate(deps: RemoteGateDeps): (req: IncomingMessage, r
       if (authed) {
         res.writeHead(302, { Location: '/', 'Cache-Control': 'no-store' });
         res.end();
-      } else sendHtml(res, loginPage({ caDownload: caAvailable() }));
+      } else sendHtml(res, loginPage({ caDownload: caAvailable(), publicGoogle: deps.config.codespaceProxyHost === 'kodexa.ia.br' }));
       return true;
     }
 
