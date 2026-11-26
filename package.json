@@ -33,6 +33,7 @@
     "usage:install": "tsx scripts/statusline-install.ts install",
     "usage:uninstall": "tsx scripts/statusline-install.ts uninstall",
     "usage:status": "tsx scripts/statusline-install.ts status",
+    "usage:claude": "tsx scripts/kodexa-claude-usage.ts",
     "hooks:install": "tsx scripts/hooks-install.ts install",
     "hooks:uninstall": "tsx scripts/hooks-install.ts uninstall",
     "hooks:status": "tsx scripts/hooks-install.ts status",
