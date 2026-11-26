@@ -1,11 +1,10 @@
-// Empacota o servidor (TypeScript) em um único arquivo ESM em dist/server e grava dist/build.json (commit e "cópia
-// modificada", ver scripts/build-info.mjs).
+// Empacota as entradas do proprietário e do estúdio público em dist/server e grava dist/build.json.
 import { build } from 'esbuild';
 import { writeBuildInfo } from './build-info.mjs';
 
 await build({
-  entryPoints: ['server/index.ts'],
-  outfile: 'dist/server/index.js',
+  entryPoints: { index: 'server/index.ts', 'public-studio': 'server/public-studio/start.ts' },
+  outdir: 'dist/server',
   bundle: true,
   platform: 'node',
   target: 'node20',

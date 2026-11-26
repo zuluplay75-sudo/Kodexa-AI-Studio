@@ -23,6 +23,7 @@
     "build:client": "vite build --config vite.config.ts",
     "build:server": "node scripts/build-server.mjs",
     "start": "node dist/server/index.js",
+    "start:public": "node dist/server/public-studio.js",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p server/tsconfig.json",
     "test": "vitest run",
     "academy": "tsx server/academy/cli.ts",
