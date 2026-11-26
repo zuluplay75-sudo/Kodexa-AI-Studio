@@ -12,7 +12,7 @@ const env = { KODEXA_ACADEMY_AUTO: '1', KODEXA_ACADEMY_PROVIDER: 'openai', KODEX
 function fakeFetch() {
   return vi.fn<typeof fetch>(async (input) => {
     const url = String(input);
-    if (url.startsWith('https://api.openai.com/')) return Response.json({choices:[{message:{content:'Notas técnicas de teste.'}}]});
+    if (url.startsWith('https://api.openai.com/')) return Response.json({choices:[{finish_reason:'stop',message:{content:'Notas técnicas de teste.'}}]});
     if (url.startsWith('https://www.googleapis.com/')) return Response.json({items:[{id:{videoId:'abcdefghijk'},snippet:{title:'Tutorial',channelTitle:'Canal'}}]});
     return new Response('<main>'+ 'Texto técnico para análise. '.repeat(40)+'</main>');
   });
@@ -53,6 +53,21 @@ describe('Kodexa Academy bootstrap', () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(String(fetcher.mock.calls[0][0])).toBe('https://api.openai.com/v1/chat/completions');
     await expect(studyTranscript({dir,env,fetcher,now:date},'design','video','Conteúdo autorizado. '.repeat(15))).rejects.toThrow('Daily model budget');
+  });
+  it('does not persist truncated study notes from either provider', async () => {
+    for (const provider of ['openai','anthropic'] as const) {
+      const dir = await directory();
+      const payload = provider === 'openai'
+        ? {choices:[{finish_reason:'length',message:{content:'Partial note'}}]}
+        : {stop_reason:'max_tokens',content:[{type:'text',text:'Partial note'}]};
+      const fetcher = vi.fn<typeof fetch>(async () => Response.json(payload));
+      const options = {dir,env:{...env,KODEXA_ACADEMY_PROVIDER:provider,ANTHROPIC_API_KEY:'fake'},fetcher,now:date};
+      await expect(studyTranscript(options,'design','Video','Conteúdo autorizado. '.repeat(15))).rejects.toThrow('incomplete model output');
+      const {loadAcademy} = await import('./bootstrap');
+      const saved = await loadAcademy(dir,'2026-11-25');
+      expect(saved.notes).toHaveLength(0);
+      expect(saved.budget.modelCalls).toBe(1);
+    }
   });
   it('strips scripts and HTML from source excerpts', () => {
     expect(documentExcerpt('<main><script>evil()</script><p>Hello &amp; world</p></main>')).toBe('Hello & world');
