@@ -9,6 +9,8 @@ describe('workspace archive',()=>{
     try{
       writeFileSync(join(root,'README.md'),'hello');
       writeFileSync(join(root,'.env'),'secret');
+      for(const name of ['.npmrc','.pypirc','.netrc','.git-credentials','id_ed25519','.gitconfig'])writeFileSync(join(root,name),'secret');
+      mkdirSync(join(root,'.docker'));writeFileSync(join(root,'.docker','config.json'),'secret');
       mkdirSync(join(root,'node_modules'));writeFileSync(join(root,'node_modules','x'),'secret');
       symlinkSync(join(root,'.env'),join(root,'alias'));
       const zip=workspaceZip(root);
