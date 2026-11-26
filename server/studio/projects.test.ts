@@ -126,7 +126,8 @@ describe('project studio',()=>{
     const routing={roles:Object.fromEntries(STAGES.map(s=>[s[0],s[0]==='scout'?'gemini':'default'])),fallback:false,dailyLimit:20};
     studio.configureProviders(routing);
     const p=studio.create({brief:'Criar aplicativo de oficina',research:false});
-    expect((await studio.next(p.id)).state).toBe('failed');expect(planner).not.toHaveBeenCalled();
+    const failed=await studio.next(p.id);
+    expect(failed.state).toBe('failed');expect(failed.error).toContain('Kodexa Scout (Gemini): Gemini HTTP 503');expect(planner).not.toHaveBeenCalled();
     studio.configureProviders({...routing,fallback:true});
     const out=await studio.next(p.id);
     expect(out.state).toBe('approval');
@@ -140,9 +141,11 @@ describe('project studio',()=>{
     const p=s.create({brief:'Criar aplicativo de oficina',research:false});
     await expect(s.next(p.id)).rejects.toMatchObject({status:409});
     expect(s.info().projects[0].stages).toEqual([]);
-    const t=new ProjectStudio({dir:dir(),env:{},run:async()=>{throw Error('provider failure');}});
+    const t=new ProjectStudio({dir:dir(),env:{},run:async()=>{throw Error('provider failure with private payload');}});
     const q=t.create({brief:'Criar aplicativo de oficina',research:false});
-    expect(await t.next(q.id)).toMatchObject({state:'failed',stages:[]});
+    const failed=await t.next(q.id);
+    expect(failed).toMatchObject({state:'failed',stages:[]});
+    expect(failed.error).toContain('Kodexa Scout');expect(failed.error).not.toContain('private payload');
   });
   it('asks the actual configured endpoint for web research and records citations',async()=>{
     const f=vi.fn(async()=>new Response(JSON.stringify({status:'completed',output:[{type:'web_search_call',status:'completed'},{type:'message',content:[{type:'output_text',text:'Pesquisa',annotations:[{type:'url_citation',url:'https://example.org'}]}]}]})));
