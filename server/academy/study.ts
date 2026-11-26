@@ -5,6 +5,7 @@ import { CURRICULUM,studyTranscript,studyVideo,type AcademyState,type Role } fro
 import { MEDIA_LIMIT,type StudyInfo,type StudyJob } from '../../shared/academy-study';
 import { articleUrl,readPublicArticle } from './web-source';
 import { analyzeVideo,visionEnabled } from './video-vision';
+import { geminiVideo,geminiVideoEnabled,youtubeVideoUrl } from './gemini-video';
 export class StudyError extends Error{constructor(readonly status:number,message:string){super(message)}}
 function state(dir:string):AcademyState|undefined{
   try{return JSON.parse(readFileSync(join(dir,'state.json'),'utf8')) as AcademyState;}
@@ -38,24 +39,28 @@ export class AcademyStudy{
   private enabled(){return this.env.KODEXA_ACADEMY_AUTO==='1'&&!!this.env.KODEXA_ACADEMY_MODEL&&((this.env.KODEXA_ACADEMY_PROVIDER==='openai'&&!!this.env.OPENAI_API_KEY)||(this.env.KODEXA_ACADEMY_PROVIDER==='anthropic'&&!!this.env.ANTHROPIC_API_KEY));}
   info():StudyInfo{
     const data=state(this.o.dir);
-    return {enabled:this.enabled(),mediaEnabled:this.enabled()&&!!this.env.OPENAI_API_KEY,videoEnabled:visionEnabled(this.env),jobs:structuredClone(this.jobs.slice(-30).reverse()),notes:(data?.notes??[]).slice(-40).reverse(),videos:(data?.jobs??[]).flatMap(j=>j.videos.map(v=>({role:j.role,title:v.title,url:v.url})))};
+    return {enabled:this.enabled(),mediaEnabled:this.enabled()&&!!this.env.OPENAI_API_KEY,videoEnabled:visionEnabled(this.env),geminiVideoEnabled:geminiVideoEnabled(this.env),jobs:structuredClone(this.jobs.slice(-30).reverse()),notes:(data?.notes??[]).slice(-40).reverse(),videos:(data?.jobs??[]).flatMap(j=>j.videos.map(v=>({role:j.role,title:v.title,url:v.url})))};
   }
   launch(raw:unknown):StudyJob{
-    const visual=(raw as {visual?:unknown}|null)?.visual===true;
-    if(visual?!visionEnabled(this.env):!this.enabled())throw new StudyError(409,'Configure e habilite o modo de estudo no servidor.');
+    const request=raw as {visual?:unknown;videoProvider?:unknown}|null;
+    const gemini=request?.videoProvider==='gemini';
+    const visual=gemini||request?.visual===true;
+    if(request?.videoProvider!==undefined&&request.videoProvider!=='gemini'&&request.videoProvider!=='claude')throw new StudyError(400,'Provedor de vídeo inválido.');
+    if(visual?(gemini?!geminiVideoEnabled(this.env):!visionEnabled(this.env)):!this.enabled())throw new StudyError(409,'Configure e habilite o modo de estudo no servidor.');
     if(this.jobs.some(j=>j.state==='running'))throw new StudyError(409,'Aguarde o estudo em andamento.');
     const b=raw as {role?:unknown;source?:unknown;text?:unknown;media?:unknown;filename?:unknown;approved?:unknown;link?:unknown}|null;
     const role=CURRICULUM.find(x=>x.id===b?.role)?.id;
     let source=typeof b?.source==='string'?b.source.trim():'';
     const link=typeof b?.link==='string'?b.link.trim():'';
-    if(link){try{source=articleUrl(link).href;}catch{throw new StudyError(400,'Use um link HTTPS público de artigo. Links de vídeo exigem transcrição ou mídia autorizada.');}}
+    if(link){try{source=gemini?youtubeVideoUrl(link):articleUrl(link).href;}catch{throw new StudyError(400,'Use um link HTTPS público de artigo. Links de vídeo exigem transcrição ou mídia autorizada.');}}
     if(!role||!source||source.length>500||b?.approved!==true)throw new StudyError(400,'Informe cargo, referência e autorize o envio ao provedor.');
     const text=typeof b.text==='string'?b.text.trim():'';
     const media=typeof b.media==='string'?b.media:'';
     const kind=visual?'video':media?'media':link?'link':'text';
-    if(visual&&(!media||link||text))throw new StudyError(400,'Envie somente um vídeo autorizado.');
+    if(visual&&((!media&&!link)||(!gemini&&!!link)||!!text))throw new StudyError(400,'Envie somente um vídeo autorizado.');
     if(link&&(text||media))throw new StudyError(400,'Envie um tipo de material por vez.');
     let bytes:Buffer|undefined,filename='';
+    if(visual||media){const today=new Date().toISOString().slice(0,10);if(this.jobs.filter(j=>(j.kind==='media'||j.kind==='video')&&j.at.startsWith(today)).length>=4)throw new StudyError(429,'Limite diário de quatro estudos de mídia.');}
     if(media){
       if(!visual&&!this.env.OPENAI_API_KEY)throw new StudyError(409,'Transcrição de mídia requer OpenAI.');
       const ext=typeof b.filename==='string'?b.filename.split('.').at(-1)?.toLowerCase():'';
@@ -64,10 +69,9 @@ export class AcademyStudy{
       if(!bytes.length||bytes.length>MEDIA_LIMIT)throw new StudyError(400,'Mídia excede o limite.');
       if(visual&&(ext==='mp4'?(bytes.length<12||bytes.toString('ascii',4,8)!=='ftyp'):(bytes.length<4||bytes.readUInt32BE(0)!==0x1a45dfa3)))throw new StudyError(400,'Contêiner de vídeo inválido.');
       filename='source.'+ext;
-      const today=new Date().toISOString().slice(0,10);
-      if(this.jobs.filter(j=>(j.kind==='media'||j.kind==='video')&&j.at.startsWith(today)).length>=4)throw new StudyError(429,'Limite diário de quatro transcrições.');
+
     }else if(!link&&(text.length<100||text.length>16000))throw new StudyError(400,'Use 100–16000 caracteres por trecho de texto ou transcrição.');
-    const j:StudyJob={id:randomUUID(),role,source,kind,state:'running',at:new Date().toISOString()};
+    const j:StudyJob={id:randomUUID(),role,source,kind,state:'running',at:new Date().toISOString(),...(visual?{videoProvider:gemini?'gemini' as const:'claude' as const}:{})};
     const before=this.jobs;
     this.jobs=[...this.jobs.slice(-99),j];
     try{this.save();}catch(e){this.jobs=before;throw e;}
@@ -77,7 +81,7 @@ export class AcademyStudy{
   private async run(j:StudyJob,text:string,bytes?:Buffer,filename=''){
     try{
       if(j.kind==='video'){
-        await studyVideo({dir:this.o.dir,env:this.env},j.role,j.source,()=> (this.o.vision??analyzeVideo)(this.env,j.role,bytes!,filename));
+        await studyVideo({dir:this.o.dir,env:this.env},j.role,j.source,()=>j.videoProvider==='gemini'?geminiVideo(this.env,j.role,bytes?{bytes,filename}:{url:j.source},this.o.fetcher): (this.o.vision??analyzeVideo)(this.env,j.role,bytes!,filename));
         j.state='done';
       }else{
       if(j.kind==='link')text=await (this.o.readArticle??readPublicArticle)(j.source);
