@@ -226,7 +226,7 @@ document.getElementById('logout').addEventListener('click', async () => {
     assignment.hidden = true;
     assignments.textContent = '';
     create.reset();
-    await refresh();
+    window.location.replace('https://kodexa.ia.br/login');
   } catch (error) { showError(error); }
 });
 const loginResult = new URLSearchParams(location.search).get('login');
