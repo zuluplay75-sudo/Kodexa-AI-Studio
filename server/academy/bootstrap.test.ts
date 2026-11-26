@@ -69,6 +69,16 @@ describe('Kodexa Academy bootstrap', () => {
       expect(saved.budget.modelCalls).toBe(1);
     }
   });
+  it('shares the model budget with audiovisual study and stores only successful notes', async () => {
+    const dir=await directory();
+    const {studyVideo,loadAcademy}=await import('./bootstrap');
+    const options={dir,env:{...env,KODEXA_ACADEMY_VIDEO:'1',KODEXA_ACADEMY_DAILY_MODEL_CALLS:'2'},now:date};
+    await expect(studyVideo(options,'dev','Tutorial',async()=>{throw Error('No frames');})).rejects.toThrow('No frames');
+    expect((await loadAcademy(dir,'2026-11-25')).notes).toHaveLength(0);
+    const note=await studyVideo(options,'dev','Tutorial',async()=> 'Nota audiovisual real');
+    expect(note).toMatchObject({kind:'video',validated:false,role:'dev',text:'Nota audiovisual real'});
+    await expect(studyVideo(options,'dev','Tutorial',async()=> 'Extra')).rejects.toThrow('Daily model budget');
+  });
   it('strips scripts and HTML from source excerpts', () => {
     expect(documentExcerpt('<main><script>evil()</script><p>Hello &amp; world</p></main>')).toBe('Hello & world');
   });
