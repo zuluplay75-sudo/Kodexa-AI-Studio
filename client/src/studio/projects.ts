@@ -1,4 +1,4 @@
-import { STAGES, nextPlanningStages, type StudioInfo, type StudioProject } from '../../../shared/studio-project';
+import { STAGES, AI_PROVIDERS, nextPlanningStages, type StudioInfo, type StudioProject, type StudioAI, type StudioRouting } from '../../../shared/studio-project';
 import './projects.css';
 import { openAcademy } from './academy';
 import { openProjectPreview } from './preview';
@@ -36,6 +36,27 @@ export function mountProjects(){
     if(!info)return;
     content.replaceChildren();
     content.append(el('p',info.configured?'IA conectada por configuração do servidor: '+info.provider+' (credenciais ainda podem precisar de validação).':'IA ainda não configurada no servidor. Projetos podem ser salvos, mas não executados.'));
+    if(info.routing){
+      const panel=el('details');panel.append(el('summary','Configurar IAs da equipe'));
+      const current=info.routing,draft:StudioRouting=structuredClone(current.routing);
+      const labels:Record<StudioAI,string>={default:'Padrão do servidor','codex-cli':'Codex','claude-cli':'Claude Code',gemini:'Gemini API'};
+      const locked=busy||info.projects.some(x=>x.state==='running'||x.delivery?.state==='running');
+      for(const provider of current.providers){
+        const row=el('p',labels[provider.id]+' · '+provider.message+' · '+provider.calls+'/'+draft.dailyLimit+' chamadas hoje (UTC)');
+        const test=btn('Testar '+labels[provider.id],()=>{if(confirm('Autoriza uma chamada de teste, sujeita aos limites e cobrança do provedor?'))void action(()=>api('/api/studio/providers/test',{id:provider.id}));});test.disabled=locked||!provider.configured;panel.append(row,test);
+      }
+      for(const [role,name] of STAGES){
+        const label=el('label',name+' — planejamento');const pick=el('select');pick.setAttribute('aria-label',name);
+        for(const id of AI_PROVIDERS){const opt=el('option',labels[id]);opt.value=id;pick.append(opt);}
+        pick.value=draft.roles[role];pick.disabled=locked;pick.onchange=()=>draft.roles[role]=pick.value as StudioAI;label.append(pick);panel.append(label);
+      }
+      const fallback=el('input');fallback.type='checkbox';fallback.checked=draft.fallback;fallback.disabled=locked;fallback.onchange=()=>draft.fallback=fallback.checked;
+      const fl=el('label','Autorizar Codex como alternativa se Claude/Gemini falhar ');fl.append(fallback);
+      const limit=el('input');limit.type='number';limit.min='1';limit.max='1000';limit.value=String(draft.dailyLimit);limit.disabled=locked;limit.oninput=()=>draft.dailyLimit=Number(limit.value);
+      const ll=el('label','Limite de chamadas por IA/dia (UTC; não é limite financeiro)');ll.append(limit);
+      const save=btn('Salvar equipe multi-IA',()=>{if(confirm('Autoriza enviar briefing e relatórios aos provedores escolhidos, inclusive ao Codex se fallback estiver marcado? As cotas e cobranças são de cada conta.'))void action(()=>api('/api/studio/providers',draft));});save.disabled=locked;
+      panel.append(fl,ll,save,el('p','A seleção vale para planejamento. Construção, testes executáveis e edição continuam no Codex. Chave Gemini deve ser configurada como GEMINI_API_KEY no servidor.'));content.append(panel);
+    }
     const pick=el('select');pick.setAttribute('aria-label','Projetos salvos');
     const empty=el('option','Novo projeto');empty.value='';pick.append(empty);
     for(const p of info.projects){const opt=el('option',(p.revision?'V'+p.revision.version+' — ':'V1 — ')+p.brief.slice(0,80));opt.value=p.id;pick.append(opt);}
@@ -53,10 +74,10 @@ export function mountProjects(){
     const versions=info.projects.filter(x=>x.id===rootId||x.revision?.rootId===rootId).sort((a,b)=>(a.revision?.version??1)-(b.revision?.version??1));
     if(versions.length>1){const history=el('details');history.append(el('summary','Histórico de versões ('+versions.length+')'));for(const v of versions){const b=btn('V'+(v.revision?.version??1)+' — '+v.brief.slice(0,90)+(v.id===p.id?' (atual)':''),()=>{selected=v.id;render();});b.disabled=busy||v.id===p.id;history.append(b);}content.append(history);}
     if(p.delivery?.state==='review'){const change=el('textarea');change.placeholder='Descreva melhorias ou correções desta versão…';change.maxLength=4000;change.rows=3;const revise=btn('Evoluir este projeto',()=>{const request=change.value.trim();if(request.length<10){status.textContent='Descreva a alteração com pelo menos 10 caracteres.';return;}if(confirm('Criar uma nova versão com cópia dos arquivos de código? A versão original será preservada. Revise os arquivos antes de prosseguir; dados e segredos conhecidos são excluídos.'))void action(async()=>{const next=await api<StudioProject>('/api/studio/projects/'+p.id+'/revise',{request,approved:true});selected=next.id;});});revise.disabled=busy||info.projects.some(x=>x.state==='running'||x.delivery?.state==='running');content.append(el('h4','Melhorar projeto existente'),change,revise);}
-    if(p.handoffs?.length){const h=el('details');h.append(el('summary','Comunicação da equipe ('+p.handoffs.length+' repasses)'));for(const item of [...p.handoffs].reverse()){const name=(r:string)=>STAGES.find(s=>s[0]===r)?.[1]??r;const from=item.from.length?item.from.map(name).join(', '):'Briefing do diretor';h.append(el('p',from+' → '+name(item.to)+' · '+(item.phase==='delivery'?'execução':'planejamento')+' · '+({started:'em execução',completed:'concluído',failed:'interrompido'}[item.state])));}content.append(h);}
+    if(p.handoffs?.length){const h=el('details');h.append(el('summary','Comunicação da equipe ('+p.handoffs.length+' repasses)'));for(const item of [...p.handoffs].reverse()){const name=(r:string)=>STAGES.find(s=>s[0]===r)?.[1]??r;const from=item.from.length?item.from.map(name).join(', '):'Briefing do diretor';h.append(el('p',from+' → '+name(item.to)+' · '+(item.phase==='delivery'?'execução':'planejamento')+(item.provider?' · '+item.provider:'')+(item.fallbackFrom?' (alternativa de '+item.fallbackFrom+')':'')+' · '+({started:'em execução',completed:'concluído',failed:'interrompido'}[item.state])));}content.append(h);}
     if(p.runningRoles?.length)content.append(el('p','Trabalhando agora: '+p.runningRoles.map(r=>STAGES.find(s=>s[0]===r)?.[1]??r).join(' · ')));
     for(const s of p.stages){
-      const details=el('details');details.open=s===p.stages.at(-1);details.append(el('summary',STAGES.find(x=>x[0]===s.role)?.[1]??s.role),el('pre',s.text));
+      const details=el('details');details.open=s===p.stages.at(-1);details.append(el('summary',(STAGES.find(x=>x[0]===s.role)?.[1]??s.role)+(s.provider?' · '+s.provider:'')+(s.fallbackFrom?' (alternativa de '+s.fallbackFrom+')':'')),el('pre',s.text));
       for(const url of s.sources){const a=el('a',url);a.href=url;a.target='_blank';a.rel='noopener noreferrer';details.append(a);}
       content.append(details);
     }
@@ -67,7 +88,7 @@ export function mountProjects(){
       const approve=btn('Aprovar e liberar Manager',()=>void action(()=>api(base+'/approve',{decision:decision.value})));approve.disabled=busy;content.append(decision,approve);
     }else if(['new','ready','failed'].includes(p.state)){
       const next=btn('Executar '+(nextPlanningStages(p)[0]?.[1]??'etapa'),()=>void action(()=>api(base+'/next',{})));next.disabled=busy||!info.configured||info.projects.some(x=>x.state==='running'||x.delivery?.state==='running');content.append(next);
-      if(p.decision){const remaining=STAGES.length-p.stages.length;const all=btn('Executar equipe restante em paralelo ('+remaining+' chamadas)',()=>{if(confirm('Autoriza '+remaining+' chamadas ao provedor de IA, sujeitas à cobrança da sua conta?'))void action(()=>api(base+'/next',{all:true}));});all.disabled=next.disabled;content.append(all);}
+      if(p.decision){const remaining=STAGES.length-p.stages.length;const all=btn('Executar equipe restante em paralelo ('+remaining+' chamadas)',()=>{if(confirm('Autoriza '+remaining+' etapas de IA (até duas chamadas por etapa se a alternativa estiver autorizada), sujeitas à cobrança das contas?'))void action(()=>api(base+'/next',{all:true}));});all.disabled=next.disabled;content.append(all);}
     }else if(p.state==='running'){const update=btn('Atualizar estado',()=>void refresh());update.disabled=busy;content.append(update);}
     else if(p.state==='complete'){
       content.append(el('p','Planejamento concluído. A execução de código exige autorização separada.'));
