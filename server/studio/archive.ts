@@ -4,7 +4,8 @@ const MAX_BYTES=20*1024*1024;
 const MAX_FILES=2000;
 const MAX_ENTRIES=10000;
 const SKIP_DIR=new Set(['.git','node_modules','.codex','.claude','.ssh','.aws','.venv','__pycache__']);
-const skip=(name:string)=>SKIP_DIR.has(name.toLowerCase())||/^\.env(?:\.|$)/i.test(name)||/^(?:auth|credentials|secrets|owner-login)\.json$/i.test(name)||/\.(?:pem|key|p12|pfx)$/i.test(name);
+const CREDENTIAL_NAMES=new Set(['.npmrc','.pypirc','.netrc','_netrc','.git-credentials','.gitconfig','.docker','id_rsa','id_ed25519','id_ecdsa','id_dsa']);
+const skip=(name:string)=>CREDENTIAL_NAMES.has(name.toLowerCase())||SKIP_DIR.has(name.toLowerCase())||/^\.env(?:\.|$)/i.test(name)||/^(?:auth|credentials|secrets|owner-login)\.json$/i.test(name)||/\.(?:pem|key|p12|pfx)$/i.test(name);
 const safeName=(name:string)=>name.length>0&&name!=='..'&&name!=='.'&&!/[\\/:*?"<>|\u0000-\u001f]/.test(name)&&!/[. ]$/.test(name)&&!/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name);
 const table=Uint32Array.from({length:256},(_,i)=>{let n=i;for(let j=0;j<8;j++)n=n&1?0xedb88320^(n>>>1):n>>>1;return n>>>0;});
 export function crc32(bytes:Buffer){let n=0xffffffff;for(const b of bytes)n=table[(n^b)&255]^(n>>>8);return (n^0xffffffff)>>>0;}
