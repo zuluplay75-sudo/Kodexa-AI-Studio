@@ -166,6 +166,36 @@ function renderProject(project) {
   const title = document.createElement('h2');
   title.textContent = project.brief;
   row.append(title);
+  const team = document.createElement('details');
+  const heading = document.createElement('summary');
+  heading.textContent = 'Equipe deste projeto';
+  team.append(heading);
+  for (const [id, label] of Object.entries({default: 'IA padrão do projeto', ...roleNames})) {
+    const field = document.createElement('label');
+    field.style.display = 'grid';
+    field.textContent = label;
+    const choice = document.createElement('select');
+    choice.add(new Option(id === 'default' ? 'Usar configurações da conta' : 'Herdar configuração', ''));
+    for (const [value, name] of Object.entries(providerNames)) choice.add(new Option(name, value));
+    let saved = project.team?.[id] || '';
+    choice.value = saved;
+    choice.disabled = project.state === 'running';
+    choice.onchange = async () => {
+      choice.disabled = true;
+      try {
+        await post('/public/projects/' + project.id + '/team', {role: id, provider: choice.value || null});
+        saved = choice.value;
+        note.textContent = 'Escolha salva neste projeto.';
+      } catch (error) { choice.value = saved; note.textContent = error.message; }
+      finally { choice.disabled = false; }
+    };
+    field.append(choice);
+    team.append(field);
+  }
+  const note = document.createElement('p');
+  note.setAttribute('role', 'status');
+  team.append(note);
+  row.append(team);
   for (const stage of project.stages) {
     const details = document.createElement('details');
     const summary = document.createElement('summary');
