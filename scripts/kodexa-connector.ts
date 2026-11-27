@@ -141,13 +141,19 @@ export function writeConfig(config: Config, home = homedir()): void {
 }
 
 async function post(server: string, path: string, body: unknown, token?: string, fetcher: typeof fetch = fetch): Promise<{ status: number; data: any }> {
-  const response = await fetcher(server + path, {
+  let response: Response;
+  try {
+    response = await fetcher(server + path, {
     method: 'POST',
     redirect: 'error',
     signal: AbortSignal.timeout(14_000),
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
     body: JSON.stringify(body),
-  });
+    });
+  } catch {
+    // Rede fora, servidor desligado ou endereço errado: em português, com o endereço (nunca o token).
+    throw new Error('Sem conexão com o Kodexa em ' + server + '. Confira a internet e tente de novo.');
+  }
   return { status: response.status, data: await response.json().catch(() => ({})) };
 }
 

@@ -61,6 +61,7 @@ jobs:
           $out = & .\dist\connector\KodexaConector.exe --versao 2>&1 | Out-String
           Write-Host $out
           if ($out -notmatch 'Kodexa Conector \d+\.\d+\.\d+ \(execut') { throw 'O .exe não se reconheceu como executável único.' }
+          $global:LASTEXITCODE = 0
 
       - name: Testar a busca do Codex instalado pelo npm
         shell: pwsh
@@ -70,6 +71,9 @@ jobs:
           $out = & .\dist\connector\KodexaConector.exe --servidor http://127.0.0.1:9 --codigo AAAA-BBBB 2>&1 | Out-String
           Write-Host $out
           if ($out -notmatch 'Codex: encontrado') { throw 'O conector não encontrou o Codex instalado pelo npm.' }
+          if ($out -notmatch 'Sem conex') { throw 'O conector não explicou a falha de conexão em português.' }
+          # O conector sai com erro de propósito (não há servidor): o passo vale pelo que ele escreveu.
+          $global:LASTEXITCODE = 0
 
       - name: Montar o MSIX (para a Store, sem assinatura)
         shell: pwsh

@@ -334,3 +334,10 @@ describe('Autorizar este computador (sem código)', () => {
     expect(nodeForLauncher({ PATH: join(process.execPath, '..') }, true)).toBe(process.execPath);
   });
 });
+
+describe('conector sem rede', () => {
+  it('falha de conexão vira mensagem em português com o endereço', async () => {
+    const offline: typeof fetch = async () => { throw new TypeError('fetch failed'); };
+    await expect(pair('https://studio.kodexa.ia.br', 'AAAA-BBBB', 'pc', offline)).rejects.toThrow('Sem conexão com o Kodexa em https://studio.kodexa.ia.br. Confira a internet e tente de novo.');
+  });
+});
