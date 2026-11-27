@@ -1,0 +1,8 @@
+body{margin:0;background:#16222c;color:#edf2ff;font:16px system-ui}
+#brand{padding:.65rem 1rem;background:#202a38;font-weight:700;height:3rem;box-sizing:border-box}
+#office-map{width:100%;height:calc(100dvh - 3rem);touch-action:none;display:block}
+[hidden]{display:none!important}
+#logout{position:absolute;right:1rem;top:.5rem}
+#login,#logout{background:#26364b;color:white;border:1px solid #8998ac;border-radius:8px;padding:.4rem .9rem}
+#login{display:inline-block;margin:1rem}
+#status:not(:empty){position:fixed;bottom:1rem;left:1rem;background:#16222c;padding:1rem}

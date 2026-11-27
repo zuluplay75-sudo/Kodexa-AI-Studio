@@ -12,7 +12,8 @@ async function api<T>(path:string,body?:unknown):Promise<T>{
   if(!r.ok)throw new Error(typeof data?.error==='string'?data.error:'Não foi possível acessar o estúdio.');
   return data as T;
 }
-export function mountProjects(){
+export function mountProjects(personal?: { request: typeof api; team: (project: StudioProject)=>HTMLElement }){
+  const request = personal?.request ?? api;
   if(document.getElementById('kodexa-projects-launch'))return;
   const dialog=el('dialog');dialog.id='kodexa-projects';dialog.setAttribute('aria-label','Projetos Kodexa');
   const launch=btn('Projetos IA',()=>{dialog.showModal();void refresh();});launch.id='kodexa-projects-launch';
@@ -26,7 +27,7 @@ export function mountProjects(){
   const close=btn('Fechar',()=>dialog.close());const toolbar=el('header');toolbar.className='kodexa-projects-toolbar';toolbar.append(heading,close);
   dialog.append(toolbar,status,content);
   async function refresh(){
-    try{info=await api<StudioInfo>('/api/studio');status.textContent='';render();}
+    try{info=await request<StudioInfo>('/api/studio');status.textContent='';render();}
     catch(e){status.textContent=(e as Error).message;}
   }
   async function action(fn:()=>Promise<unknown>){
@@ -39,7 +40,8 @@ export function mountProjects(){
     content.replaceChildren();
     if(view==='list'){
       const actions=el('div');actions.className='kodexa-projects-actions';
-      actions.append(btn('Novo projeto',()=>{view='create';render();}),btn('Abrir Academy',openAcademy));
+      actions.append(btn('Novo projeto',()=>{view='create';render();}));
+      if(!personal) actions.append(btn('Abrir Academy',openAcademy));
       content.append(actions);
       const groups=new Map<string,StudioProject>();
       for(const project of info.projects){
@@ -71,10 +73,11 @@ export function mountProjects(){
       content.append(el('h3','Novo projeto'));
       const brief=el('textarea');brief.placeholder='Que aplicativo, jogo ou sistema você deseja criar? Se estiver em dúvida, diga seu público ou interesses.';brief.maxLength=4000;brief.rows=5;
       const label=el('label','Pesquisa real na web pelo Scout '),research=el('input');research.type='checkbox';research.disabled=!info.webResearch||busy;label.append(research);
-      const create=btn('Criar projeto',()=>void action(async()=>{const x=await api<StudioProject>('/api/studio/projects',{brief:brief.value,research:research.checked});selected=x.id;view='project';}));create.disabled=busy;
+      const create=btn('Criar projeto',()=>void action(async()=>{const x=await request<StudioProject>('/api/studio/projects',{brief:brief.value,research:research.checked});selected=x.id;view='project';}));create.disabled=busy;
       content.append(brief,label,create);return;
     }
     content.append(el('h3',p.brief),el('p','Etapas de planejamento concluídas: '+p.stages.length+' de '+STAGES.length));
+    if(personal) content.append(personal.team(p));
     if(p.revision){content.append(el('p','Versão '+p.revision.version+' · '+p.revision.files+' arquivos de origem copiados · '+p.revision.baseBrief));const previous=btn('Abrir versão de origem',()=>{selected=p.revision!.baseId;render();});previous.disabled=busy;content.append(previous);}
     const rootId=p.revision?.rootId??p.id;
     const versions=info.projects.filter(x=>x.id===rootId||x.revision?.rootId===rootId).sort((a,b)=>(a.revision?.version??1)-(b.revision?.version??1));
@@ -94,13 +97,14 @@ export function mountProjects(){
     const base='/api/studio/projects/'+p.id;
     if(p.state==='approval'){
       const decision=el('textarea');decision.placeholder='Escolha uma opção do Scout ou descreva sua decisão.';decision.maxLength=4000;
-      const approve=btn('Aprovar e liberar Manager',()=>void action(()=>api(base+'/approve',{decision:decision.value})));approve.disabled=busy;content.append(decision,approve);
+      const approve=btn('Aprovar e liberar Manager',()=>void action(()=>request(base+'/approve',{decision:decision.value})));approve.disabled=busy;content.append(decision,approve);
     }else if(['new','ready','failed'].includes(p.state)){
-      const next=btn('Executar '+(nextPlanningStages(p)[0]?.[1]??'etapa'),()=>void action(()=>api(base+'/next',{})));next.disabled=busy||!info.configured||info.projects.some(x=>x.state==='running'||x.delivery?.state==='running');content.append(next);
-      if(p.decision){const remaining=STAGES.length-p.stages.length;const all=btn('Executar equipe restante em paralelo ('+remaining+' chamadas)',()=>{if(confirm('Autoriza '+remaining+' etapas de IA (até duas chamadas por etapa se a alternativa estiver autorizada), sujeitas à cobrança das contas?'))void action(()=>api(base+'/next',{all:true}));});all.disabled=next.disabled;content.append(all);}
+      const next=btn('Executar '+(nextPlanningStages(p)[0]?.[1]??'etapa'),()=>void action(()=>request(base+'/next',{})));next.disabled=busy||!info.configured||info.projects.some(x=>x.state==='running'||x.delivery?.state==='running');content.append(next);
+      if(p.decision && !personal){const remaining=STAGES.length-p.stages.length;const all=btn('Executar equipe restante em paralelo ('+remaining+' chamadas)',()=>{if(confirm('Autoriza '+remaining+' etapas de IA (até duas chamadas por etapa se a alternativa estiver autorizada), sujeitas à cobrança das contas?'))void action(()=>api(base+'/next',{all:true}));});all.disabled=next.disabled;content.append(all);}
     }else if(p.state==='running'){const update=btn('Atualizar estado',()=>void refresh());update.disabled=busy;content.append(update);}
     else if(p.state==='complete'){
       content.append(el('p','Planejamento concluído. A execução de código exige autorização separada.'));
+      if(personal)return;
       if(p.delivery){
         const reports=el('details');reports.append(el('summary','Arquivos e relatórios das sessões'),el('p',p.delivery.workspace));
         for(const step of p.delivery.steps){const d=el('details');d.append(el('summary',step.role+' — relatório da sessão'),el('pre',step.report));reports.append(d);}

@@ -82,11 +82,9 @@ it('isolates authenticated projects, consumes the OAuth flow and revokes session
     const health = await request('/public/health');
     expect(await health.json()).toEqual({ status: 'ok' });
     const page = await request('/public/');
-    expect(await page.text()).toContain('Conectar Codex e Claude Code');
+    expect(await page.text()).toContain('office-map');
     expect(page.headers.get('content-security-policy')).toContain("script-src 'self'");
-    const script = await request('/public/studio.js');
-    const source = await script.text();
-    expect(() => new Script(source)).not.toThrow();
+    expect((await request('/public/studio.js')).status).toBe(404);
     expect((await request('/public/projects')).status).toBe(401);
     const first = await login('first');
     const second = await login('second');
@@ -160,3 +158,4 @@ it('isolates authenticated projects, consumes the OAuth flow and revokes session
     rmSync(dir, { recursive: true, force: true });
   }
 });
+

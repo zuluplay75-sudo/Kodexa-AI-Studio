@@ -36,8 +36,12 @@ function select<T extends string>(options: ReadonlyArray<readonly [T,string]>, v
 const providers: ReadonlyArray<readonly [Provider,string]> = [['unconfigured','Configurar depois'],['claude','Claude Code'],['codex','Codex'],['gemini','Gemini API']];
 const themes: ReadonlyArray<readonly [StudioPrefs['theme'],string]> = [['pixel','Pixel clássico · dourado e verde'],['midnight','Meia-noite · azul e violeta'],['ocean','Oceano · azul e ciano'],['graphite','Grafite · neutro']];
 
-export function mountStudioSetup(onMembersChanged: (members: Member[]) => void): void {
-  onMembersChanged(readPrefs()?.members ?? []);
+export function mountStudioSetup(onMembersChanged: (members: Member[]) => void, personal?: {
+  prefs: StudioPrefs | null; save: (prefs: StudioPrefs)=>Promise<void>;
+  connections: (refresh: ()=>void)=>HTMLElement;
+  picker: (id: StudioRole)=>HTMLSelectElement;
+}): void {
+  onMembersChanged((personal ? personal.prefs : readPrefs())?.members ?? []);
   if (document.getElementById('kodexa-setup-launch')) return;
   const launch = button('Configurar estúdio',open);
   launch.id = 'kodexa-setup-launch';
@@ -47,11 +51,12 @@ export function mountStudioSetup(onMembersChanged: (members: Member[]) => void):
   document.body.append(launch,dialog);
   function open() {
     if(dialog.open)return;
-    const existing = readPrefs();
-    const draft: StudioPrefs = existing ?? {schema:1,company:'Minha empresa',theme:'pixel',members:defaultMembers()};
+    const existing = personal ? structuredClone(personal.prefs) : readPrefs();
+    const draft: StudioPrefs = existing ?? {schema:1,company:'Minha empresa',theme:'pixel',members:personal ? [] : defaultMembers()};
     const title = el('h1');
-    const logo = el('img'); logo.src = '/assets/brand/kodexa-logo.svg'; logo.alt = 'Kodexa AI Studio'; logo.width = 240; logo.height = 96; title.append(logo);
+    const logo = el('img'); logo.src = '/assets/brand/kodexa-logo.svg'; logo.alt = 'Kodexa AI Studio'; logo.width = 240; logo.height = 96; if(personal) title.textContent='Kodexa AI Studio'; else title.append(logo);
     const description = el('p','Configure sua empresa virtual e sua equipe. Nome e aparência ficam neste navegador; as IAs de planejamento ficam salvas no servidor e valem para os projetos.');
+    if(personal) description.textContent='Configure sua empresa, sua equipe e as conexões de IA desta conta.';
     const status = el('p',''); status.setAttribute('role','status');
     const form = el('form');
     const name = textInput(draft.company,80);
@@ -62,11 +67,13 @@ export function mountStudioSetup(onMembersChanged: (members: Member[]) => void):
     const routingPanel=el('section');routingPanel.className='kodexa-routing';
     let current:RoutingInfo|undefined, routing:StudioRouting|undefined, locked=false, busy=false, routingError='Carregando configuração de IAs…';
     function rolePicker(role:StudioRole):HTMLSelectElement{
+      if(personal)return personal.picker(role);
       const pick=select(AI_PROVIDERS.map(id=>[id,providerLabels[id]] as const),routing?.roles[role]??'default',v=>{if(routing)routing.roles[role]=v;});
       pick.disabled=!routing||locked||busy;return pick;
     }
     function renderRouting(){
       routingPanel.replaceChildren(el('h2','Conexões e limites das IAs'));
+      if(personal){routingPanel.append(personal.connections(redraw));return;}
       if(!current||!routing){routingPanel.append(el('p',routingError));return;}
       if(locked)routingPanel.append(el('p','A equipe está trabalhando. Alterações de IA estão bloqueadas até concluir.'));
       const config=routing;
@@ -120,6 +127,7 @@ export function mountStudioSetup(onMembersChanged: (members: Member[]) => void):
     });
     modes.append(button('Equipe padrão (8)',()=>{draft.members=defaultMembers();redraw();}),button('Escritório vazio',()=>{draft.members=[];redraw();}));
     const note = el('p','Os oito cargos fixos usam a seleção de IA para planejamento de todos os projetos. Agentes personalizados são apenas visuais. Escolher uma IA não conecta uma conta nem concede permissões de execução. A construção e os testes executáveis continuam no Codex. Configure GEMINI_API_KEY no servidor. A formação do Academy continua separada.');
+    if(personal) note.textContent='As atribuições de cada projeto ficam em Projetos IA.';
     note.className='kodexa-note';
     const save = el('button','Salvar configuração'); save.type='submit';save.className='kodexa-primary';
     const close = button('Fechar',()=>dialog.close());
@@ -141,11 +149,15 @@ export function mountStudioSetup(onMembersChanged: (members: Member[]) => void):
         finally{busy=false;save.disabled=false;redraw();}
       }
       if(routing)for(const m of draft.members){const role=studioRole(m.id);if(role)m.provider=localProvider(routing.roles[role]);}
-      if(!savePrefs(draft)){status.textContent='Não foi possível salvar as preferências do navegador. A configuração de IAs do servidor não foi revertida.';return;}
+      if(personal){
+        try{save.disabled=true;await personal.save(draft);personal.prefs=structuredClone(draft);}
+        catch(e){status.textContent=(e as Error).message;return;}
+        finally{save.disabled=false;}
+      } else if(!savePrefs(draft)){status.textContent='Não foi possível salvar as preferências do navegador. A configuração de IAs do servidor não foi revertida.';return;}
       onMembersChanged(draft.members);
       dialog.close();
     }
-    dialog.replaceChildren(title,description,form);redraw();dialog.showModal();void loadRouting();
+    dialog.replaceChildren(title,description,form);redraw();dialog.showModal();if(!personal)void loadRouting();
   }
-  if (!readPrefs()) open();
+  if (!personal && !readPrefs()) open();
 }

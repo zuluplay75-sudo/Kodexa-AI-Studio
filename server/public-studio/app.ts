@@ -1,11 +1,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { nextPlanningStages, STAGES, type StudioRole } from '../../shared/studio-project';
 import { parseConnection, plan, type Connection } from './planning';
 import { HttpError, readJson } from '../http/app';
 import { ProjectError, ProjectStudio } from '../studio/projects';
-import { publicStudioPage, publicStudioScript, publicStudioStyles } from './page';
+import { parsePrefs } from '../../client/src/studio/prefs';
 import { googleLogin, googleSubject, opaqueToken, sameToken, type GoogleConfig } from './google';
 
 const flowCookiePrefix = '__Host-kodexa-google-';
@@ -123,10 +123,9 @@ export function createPublicStudio(options: {
     if (method === 'GET' && url.pathname === '/public/health') return json(res, 200, { status: 'ok' });
 
     if (method === 'GET') {
-      const resource = url.pathname === '/public/' ? ['text/html', publicStudioPage] :
-        url.pathname === '/public/studio.css' ? ['text/css', publicStudioStyles] :
-        url.pathname === '/public/office.js' ? ['text/javascript', readFileSync(new URL('./public-office.js', import.meta.url), 'utf8')] :
-        url.pathname === '/public/studio.js' ? ['text/javascript', publicStudioScript] : undefined;
+      const resource = url.pathname === '/public/' ? ['text/html', '<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kodexa AI Studio</title><link rel="stylesheet" href="/public/office.css"><script defer src="/public/office.js"></script><body><header id="brand">Kodexa AI Studio</header><main><a hidden id="login" href="/public/google">Entrar com Google</a><canvas hidden id="office-map" aria-label="Escritório Kodexa"></canvas><button hidden id="logout">Sair</button><p id="status" role="status"></p></main></body></html>'] :
+        url.pathname === '/public/office.css' ? ['text/css', readFileSync(new URL('./public-office.css', import.meta.url), 'utf8')] :
+        url.pathname === '/public/office.js' ? ['text/javascript', readFileSync(new URL('./public-office.js', import.meta.url), 'utf8')] : undefined;
       if (resource) {
         res.setHeader('Content-Security-Policy', "default-src 'none'; connect-src 'self'; script-src 'self'; style-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'");
         res.writeHead(200, { 'Content-Type': resource[0] + '; charset=utf-8' });
@@ -178,7 +177,7 @@ export function createPublicStudio(options: {
 
     // The public process has a positive allowlist and never calls owner routes.
     const action = /^\/public\/projects\/([a-f0-9-]{36})\/(next|approve|team)$/.exec(url.pathname);
-    if (!action && !['/public/projects', '/public/logout', '/public/provider'].includes(url.pathname)) {
+    if (!action && !['/public/projects', '/public/logout', '/public/provider', '/public/preferences'].includes(url.pathname)) {
       return json(res, 404, { error: 'Página não encontrada.' });
     }
     const sessionId = readCookie(req, sessionCookie);
@@ -202,6 +201,22 @@ export function createPublicStudio(options: {
       mutations.set(session.user, limit);
     }
 
+    if (url.pathname === '/public/preferences') {
+      const dir = join(options.dir, session.user);
+      const file = join(dir, 'office-prefs');
+      if (method === 'POST') {
+        const prefs = parsePrefs(JSON.stringify(await readJson(req, 32768)));
+        if (!prefs) throw new ProjectError(400, 'Configuração inválida.');
+        if (sessions.get(sessionId) !== session || session.expires <= clock()) return json(res, 401, {error:'Entre com Google.'});
+        mkdirSync(dir, {recursive:true});
+        writeFileSync(file+'.tmp', JSON.stringify(prefs), {mode:0o600});
+        renameSync(file+'.tmp', file);
+        return json(res, 200, {ok:true});
+      }
+      if(method !== 'GET') return json(res,405,{error:'Método não permitido.'});
+      try { return json(res,200,parsePrefs(readFileSync(file,'utf8'))); }
+      catch(error){if((error as NodeJS.ErrnoException).code !== 'ENOENT')throw error;return json(res,200,null);}
+    }
     if (url.pathname === '/public/provider') {
       let prefs = preferences.get(session.user);
       if (method === 'POST') {
@@ -214,6 +229,7 @@ export function createPublicStudio(options: {
           if (prefs.defaultProvider === body.provider) prefs.defaultProvider = undefined;
           for (const [role, provider] of prefs.assignments) if (provider === body.provider) prefs.assignments.delete(role);
         } else if (body?.assign === true) {
+          if(body.provider === null && STAGES.some(([id])=>id===body.role)){ prefs.assignments.delete(body.role as StudioRole); } else {
           if (!isProvider(body.provider) || !prefs.connections.has(body.provider)) {
             throw new ProjectError(400, 'Conecte o provedor antes de atribuí-lo.');
           }
@@ -222,6 +238,7 @@ export function createPublicStudio(options: {
             const role = STAGES.find(([id]) => id === body.role)?.[0];
             if (!role) throw new ProjectError(400, 'Selecione uma etapa válida.');
             prefs.assignments.set(role, body.provider);
+          }
           }
         } else {
           const connection = parseConnection(body);
