@@ -103,12 +103,29 @@ const PROBLEM: Partial<Record<Route['state'], string>> = {
   missing: 'o conector do seu computador está sem essa ferramenta',
 };
 
-/** Comandos para o cliente rodar no computador dele (baixar o conector e parear com o código). */
-export function connectorCommands(server: string, code: string, tool: 'codex' | 'claude'): string[] {
-  return [
-    'curl -fsSL ' + server + '/public/kodexa-conector.mjs -o kodexa-conector.mjs',
-    'node kodexa-conector.mjs --codigo ' + code + (server === 'https://studio.kodexa.ia.br' ? '' : ' --servidor ' + server) + (tool === 'claude' ? ' --com-claude' : ''),
-  ];
+export type Platform = 'windows' | 'mac' | 'linux';
+/** Sistema do computador em que a página está aberta (para mostrar o instalador e os comandos certos). */
+export function platformOf(userAgent: string, uaPlatform = ''): Platform {
+  const v = (uaPlatform + ' ' + userAgent).toLowerCase();
+  if (v.includes('win')) return 'windows';
+  if (v.includes('mac')) return 'mac';
+  return 'linux';
+}
+
+/**
+ * Comandos para o cliente rodar no computador dele (baixar o conector do próprio Kodexa e parear com o código), no
+ * formato do terminal de cada sistema. No PowerShell, `curl` é outro comando: lá vai `curl.exe`.
+ */
+export function connectorCommands(server: string, code: string, tool: 'codex' | 'claude', platform: Platform = 'linux'): { terminal: string; lines: string[] }[] {
+  const run = 'node kodexa-conector.mjs --codigo ' + code + (server === 'https://studio.kodexa.ia.br' ? '' : ' --servidor ' + server) + (tool === 'claude' ? ' --com-claude' : '');
+  const download = (curl: string) => curl + ' -fsSL ' + server + '/public/kodexa-conector.mjs -o kodexa-conector.mjs';
+  if (platform === 'windows') {
+    return [
+      { terminal: 'Prompt de Comando (cmd)', lines: [download('curl'), run] },
+      { terminal: 'PowerShell', lines: [download('curl.exe'), run] },
+    ];
+  }
+  return [{ terminal: platform === 'mac' ? 'Terminal do Mac' : 'Terminal', lines: [download('curl'), run] }];
 }
 
 /** "Kodexa Dev usa ChatGPT neste projeto", "Kodexa Scout usa Gemini por escolha deste projeto"... */

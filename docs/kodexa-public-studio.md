@@ -16,6 +16,12 @@ Claude Code (logado na conta Claude) dele, sem chave e sem custo de API. O servi
    `connector-devices.json`) e passa a perguntar por tarefas (`/public/connector/poll`, sempre de saída), roda
    `codex exec --sandbox read-only --ephemeral` (ou `claude -p --permission-mode dontAsk`) numa pasta vazia em
    `~/.kodexa/trabalho` e devolve o texto (`/public/connector/ack`).
+   **No Windows**, o painel oferece **Baixar instalador para Windows**: um `.cmd` gerado na hora com o código dentro
+   (`/public/connector/windows.cmd`, só pedido pela própria página), que confere o Node.js, instala o Codex pelo npm se
+   faltar, roda `codex login` se precisar, baixa o conector para `%LOCALAPPDATA%\Kodexa`, pergunta se deve abrir
+   junto com o Windows (atalho em Inicializar, apagável) e pareia. No PowerShell, os comandos manuais usam
+   `curl.exe`. O conector acha o Codex instalado pelo npm no Windows pelo launcher do pacote
+   (`node …\@openai\codex\bin\codex.js`), já que o atalho `codex.cmd` não roda sem shell.
 4. O computador precisa estar ligado com o conector aberto. Desligado, a etapa não começa e o painel diz isso;
    **Remover** no painel invalida o token na hora.
 

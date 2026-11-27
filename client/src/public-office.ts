@@ -9,7 +9,7 @@ import { STAGES, type StudioProject } from '../../shared/studio-project';
 import { PERSONAL_AI_PREFIX } from './ui/provider';
 import './public-office.css';
 
-import { assignable, CHOICE_LABEL, CHOICES, connectorCommands, DEFAULT_MODEL, GUIDE, initialChoice, LABEL, LOCAL, routeText, stateText, type Choice, type Device, type ProviderId, type Route, type Settings } from './studio/ai-connections';
+import { assignable, CHOICE_LABEL, CHOICES, connectorCommands, platformOf, DEFAULT_MODEL, GUIDE, initialChoice, LABEL, LOCAL, routeText, stateText, type Choice, type Device, type ProviderId, type Route, type Settings } from './studio/ai-connections';
 
 /** Retorno do ChatGPT (?chatgpt=...): o que dizer ao voltar para o escritório. */
 const CHATGPT_RETURN: Record<string, string> = {
@@ -129,14 +129,25 @@ async function start(){
           }));
           if(!list.length)devices.append(el('li','Nenhum computador pareado ainda.'));
         };
-        void request<{devices:Device[]}>('/public/connector').then(r=>renderDevices(r.devices)).catch(e=>feedback.textContent=(e as Error).message);
-        const generate=action('Gerar código de pareamento',b=>void (async()=>{b.disabled=true;try{
+        const loadDevices=()=>request<{devices:Device[]}>('/public/connector').then(r=>renderDevices(r.devices)).catch(e=>feedback.textContent=(e as Error).message);
+        void loadDevices();
+        // Enquanto o diálogo está aberto, a lista acompanha o conector ligando (depois do instalador ou dos comandos).
+        const timer=setInterval(()=>{if(!panel.isConnected)clearInterval(timer);else void loadDevices();},5000);
+        const platform=platformOf(navigator.userAgent,(navigator as Navigator&{userAgentData?:{platform?:string}}).userAgentData?.platform);
+        const tool=choice==='claude-local'?'claude':'codex';
+        const generate=action(platform==='windows'&&tool==='codex'?'Prefiro usar comandos no terminal':'Gerar código de pareamento',b=>void (async()=>{b.disabled=true;try{
           const r=await request<{code:string;expiresAt:number;server:string}>('/public/connector/pair',{});
-          const pre=el('pre',connectorCommands(r.server,r.code,choice==='claude-local'?'claude':'codex').join('\n'));
-          pairing.replaceChildren(el('p','Código: '+r.code+' (vale por 10 minutos, uma vez). No terminal do seu computador, com o Node.js instalado, rode:'),pre,
-            el('p','Deixe a janela do conector aberta. Quando ele estiver ligado, este painel mostra o computador como ligado.'));
+          pairing.replaceChildren(el('p','Código: '+r.code+' (vale por 10 minutos, uma vez). Com o Node.js instalado, rode no terminal do seu computador:'));
+          for(const option of connectorCommands(r.server,r.code,tool,platform))pairing.append(el('h5',option.terminal),el('pre',option.lines.join('\n')));
+          pairing.append(el('p','Deixe a janela do conector aberta. Quando ele estiver ligado, este painel mostra o computador como ligado.'));
         }catch(e){feedback.textContent=(e as Error).message;}finally{b.disabled=false;}})());
-        panel.append(el('h4','Seus computadores'),devices,generate,pairing);
+        panel.append(el('h4','Seus computadores'),devices);
+        if(platform==='windows'&&tool==='codex'){
+          // Windows: um instalador com o código dentro (dois cliques), que instala o que faltar e pareia.
+          const installer=el('a','Baixar instalador para Windows');installer.href='/public/connector/windows.cmd';installer.className='kodexa-ai__link';installer.setAttribute('download','Instalar Kodexa Conector.cmd');
+          panel.append(installer,el('p','Abra o arquivo baixado com dois cliques. Ele confere o Node.js, instala o Codex se faltar, pede o login do ChatGPT e conecta este computador. Se o Windows perguntar se deseja executar, confirme. O código de dentro vale por 10 minutos.'));
+        }
+        panel.append(generate,pairing);
         return;
       }
       const state=el('p',stateText(info));state.className='kodexa-ai__state is-'+info.state;panel.append(state);

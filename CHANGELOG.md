@@ -10,6 +10,10 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+- Kodexa Conector no Windows: instalador de dois cliques (com o código de pareamento dentro) que instala o que faltar,
+  faz o login do Codex e conecta o computador; o conector passa a encontrar o Codex instalado pelo npm no Windows; o
+  painel mostra os comandos certos para cmd, PowerShell e Mac/Linux e atualiza sozinho quando o computador liga.
+
 - Kodexa Conector: como no Habblaud original, os agentes podem usar o Codex (plano ChatGPT) ou o Claude Code (plano
   Claude) do computador do próprio cliente, sem chave e sem custo de API. O cliente gera um código em Configurar
   estúdio, roda o conector baixado do Kodexa e o painel mostra o computador ligado ou desligado, com Remover.

@@ -15,9 +15,9 @@
 // - Sem shell (execFile), com prazo, e o pedido vai pela entrada padrão (nunca vira opção na linha de comando).
 // - O Claude Code só entra com --com-claude: confira os termos de uso do seu plano Claude antes de ligar.
 import { execFile } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, hostname } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, isAbsolute, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { findCodexBin } from '../server/messages/codex';
 import { runnableClaudeBin } from '../server/claude-bin';
@@ -35,6 +35,30 @@ function firstLine(s: string | undefined): string {
   return (s ?? '').split(/\r?\n/).map((l) => l.trim()).find(Boolean)?.slice(0, 200) ?? '';
 }
 
+/** Como rodar uma ferramenta: o executável e os argumentos que vêm antes dos da tarefa. */
+export type Command = { file: string; args: string[] };
+
+/**
+ * Onde está o Codex. 1) KODEXA_CODEX_BIN; 2) o executável no PATH (codex.exe no Windows, codex no macOS/Linux, como
+ * no original); 3) no Windows, a instalação do npm (`npm install -g @openai/codex`) deixa só um atalho `codex.cmd`,
+ * que o execFile não roda sem shell: usa o launcher do pacote com o próprio Node (`node .../@openai/codex/bin/codex.js`),
+ * que é o que o atalho faz e que acha o codex.exe certo para a máquina.
+ */
+export function findCodex(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, exists: (p: string) => boolean = existsSync, node = process.execPath): Command | undefined {
+  const explicit = env.KODEXA_CODEX_BIN?.trim();
+  if (explicit) return exists(explicit) ? { file: explicit, args: [] } : undefined;
+  const native = findCodexBin(env);
+  if (native) return { file: native, args: [] };
+  if (platform !== 'win32') return undefined;
+  const dirs = (env.PATH ?? env.Path ?? '').split(delimiter).filter((d) => d && isAbsolute(d));
+  if (env.APPDATA) dirs.push(join(env.APPDATA, 'npm'));
+  for (const dir of dirs) {
+    const launcher = join(dir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+    if (exists(launcher)) return { file: node, args: [launcher] };
+  }
+  return undefined;
+}
+
 /** Roda um binário sem shell, com o pedido pela entrada padrão. Nunca rejeita. */
 function run(bin: string, args: string[], input: string, cwd: string, timeoutMs: number): Promise<{ ok: boolean; stdout: string; error: string }> {
   return new Promise((done) => {
@@ -48,12 +72,13 @@ function run(bin: string, args: string[], input: string, cwd: string, timeoutMs:
 }
 
 /** Codex: `codex exec` só leitura, sem guardar sessão, numa pasta vazia; o texto final vem do --output-last-message. */
-export function codexRunner(bin: string, workRoot: string, timeoutMs = TASK_TIMEOUT_MS): Runner {
+export function codexRunner(codex: Command | string, workRoot: string, timeoutMs = TASK_TIMEOUT_MS): Runner {
+  const command = typeof codex === 'string' ? { file: codex, args: [] } : codex;
   return async (job) => {
     const dir = mkdtempSync(join(workRoot, 'codex-'));
     try {
       const out = join(dir, 'resposta.txt');
-      const r = await run(bin, ['exec', '--sandbox', 'read-only', '--skip-git-repo-check', '--ephemeral', '--color', 'never', '--output-last-message', out, '-'], job.prompt, dir, timeoutMs);
+      const r = await run(command.file, [...command.args, 'exec', '--sandbox', 'read-only', '--skip-git-repo-check', '--ephemeral', '--color', 'never', '--output-last-message', out, '-'], job.prompt, dir, timeoutMs);
       let text = '';
       try { text = readFileSync(out, 'utf8'); } catch { /* sem resposta */ }
       if (!r.ok) return { ok: false, error: r.error };
@@ -145,11 +170,11 @@ async function main(argv: string[]): Promise<void> {
   const work = join(homedir(), '.kodexa', 'trabalho');
   mkdirSync(work, { recursive: true, mode: 0o700 });
   const runners: Partial<Record<Tool, Runner>> = {};
-  const codex = findCodexBin(process.env);
+  const codex = findCodex();
   if (codex) runners.codex = codexRunner(codex, work);
   const claude = argv.includes('--com-claude') ? runnableClaudeBin(process.env) : undefined;
   if (claude) runners.claude = claudeRunner(claude, work);
-  log('Codex: ' + (codex ? 'encontrado (' + codex + ')' : 'não encontrado — instale e entre com: codex login'));
+  log('Codex: ' + (codex ? 'encontrado (' + [codex.file, ...codex.args].join(' ') + ')' : 'não encontrado — instale com "npm install -g @openai/codex" e entre com "codex login"'));
   log('Claude Code: ' + (claude ? 'encontrado (' + claude + ')' : argv.includes('--com-claude') ? 'não encontrado' : 'desligado (use --com-claude)'));
   if (!codex && !claude) throw new Error('Nenhuma ferramenta disponível neste computador.');
   if (code) {

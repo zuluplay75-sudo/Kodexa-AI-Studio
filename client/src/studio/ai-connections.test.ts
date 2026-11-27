@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignable, CHOICES, connectorCommands, initialChoice, routeText, stateText, type ProviderInfo } from './ai-connections';
+import { assignable, CHOICES, connectorCommands, initialChoice, platformOf, routeText, stateText, type ProviderInfo } from './ai-connections';
 
 const info = (provider: ProviderInfo['provider'], state: ProviderInfo['state'], extra: Partial<ProviderInfo> = {}): ProviderInfo =>
   ({ provider, state, model: null, account: null, ...extra });
@@ -36,11 +36,19 @@ describe('conector no computador do cliente', () => {
     expect(routeText('Kodexa Dev', { provider: 'codex-local', source: 'account-default', state: 'offline' }))
       .toBe('Kodexa Dev usa Codex no seu computador neste projeto — o computador com o Kodexa Conector está desligado.');
   });
-  it('comandos de pareamento: baixar o conector do próprio Kodexa e parear com o código', () => {
-    expect(connectorCommands('https://studio.kodexa.ia.br', 'ABCD-EFGH', 'codex')).toEqual([
-      'curl -fsSL https://studio.kodexa.ia.br/public/kodexa-conector.mjs -o kodexa-conector.mjs',
-      'node kodexa-conector.mjs --codigo ABCD-EFGH',
+  it('comandos de pareamento por sistema: cmd e PowerShell (curl.exe) no Windows, Terminal no Mac', () => {
+    expect(connectorCommands('https://studio.kodexa.ia.br', 'ABCD-EFGH', 'codex', 'windows')).toEqual([
+      { terminal: 'Prompt de Comando (cmd)', lines: ['curl -fsSL https://studio.kodexa.ia.br/public/kodexa-conector.mjs -o kodexa-conector.mjs', 'node kodexa-conector.mjs --codigo ABCD-EFGH'] },
+      { terminal: 'PowerShell', lines: ['curl.exe -fsSL https://studio.kodexa.ia.br/public/kodexa-conector.mjs -o kodexa-conector.mjs', 'node kodexa-conector.mjs --codigo ABCD-EFGH'] },
     ]);
-    expect(connectorCommands('https://outro.exemplo', 'ABCD-EFGH', 'claude')[1]).toBe('node kodexa-conector.mjs --codigo ABCD-EFGH --servidor https://outro.exemplo --com-claude');
+    expect(connectorCommands('https://outro.exemplo', 'ABCD-EFGH', 'claude', 'mac')).toEqual([
+      { terminal: 'Terminal do Mac', lines: ['curl -fsSL https://outro.exemplo/public/kodexa-conector.mjs -o kodexa-conector.mjs', 'node kodexa-conector.mjs --codigo ABCD-EFGH --servidor https://outro.exemplo --com-claude'] },
+    ]);
+  });
+  it('detecta o sistema pelo navegador', () => {
+    expect(platformOf('Mozilla/5.0 (Windows NT 10.0; Win64; x64)')).toBe('windows');
+    expect(platformOf('', 'Windows')).toBe('windows');
+    expect(platformOf('Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)')).toBe('mac');
+    expect(platformOf('Mozilla/5.0 (X11; Linux x86_64)')).toBe('linux');
   });
 });

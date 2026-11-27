@@ -8,6 +8,7 @@ import { chatgptAuthorization, ChatGPTError, exchangeCode, refreshGrant, respond
 import { connectionState, resolveRoute, type Route, type Team } from './routing';
 import { ConnectionVault, isLocal, isProvider, LOCAL_PROVIDERS, PROVIDERS, type Credential, type Provider } from './vault';
 import { ConnectorError, ConnectorHub } from './connector';
+import { windowsInstaller } from './windows-installer';
 import { HttpError, readJson } from '../http/app';
 import { PlanningApiError, ProjectError, ProjectStudio } from '../studio/projects';
 import { parsePrefs } from '../../client/src/studio/prefs';
@@ -269,7 +270,7 @@ export function createPublicStudio(options: {
 
     // The public process has a positive allowlist and never calls owner routes.
     const action = /^\/public\/projects\/([a-f0-9-]{36})\/(next|approve|team)$/.exec(url.pathname);
-    if (!action && !['/public/projects', '/public/logout', '/public/provider', '/public/preferences', '/public/chatgpt', '/public/chatgpt/callback', '/public/connector', '/public/connector/pair', '/public/connector/revoke'].includes(url.pathname)) {
+    if (!action && !['/public/projects', '/public/logout', '/public/provider', '/public/preferences', '/public/chatgpt', '/public/chatgpt/callback', '/public/connector', '/public/connector/pair', '/public/connector/revoke', '/public/connector/windows.cmd'].includes(url.pathname)) {
       return json(res, 404, { error: 'Página não encontrada.' });
     }
     const sessionId = readCookie(req, sessionCookie);
@@ -359,6 +360,20 @@ export function createPublicStudio(options: {
       catch(error){if((error as NodeJS.ErrnoException).code !== 'ENOENT')throw error;return json(res,200,null);}
     }
 
+    if (url.pathname === '/public/connector/windows.cmd') {
+      // Instalador do Windows com um código novo dentro. Só da própria página (um link de outro site não gera código).
+      if (method !== 'GET') return json(res, 405, { error: 'Método não permitido.' });
+      const site = req.headers['sec-fetch-site'];
+      if (site !== undefined && site !== 'same-origin') return json(res, 403, { error: 'Gere o instalador pelo painel do Kodexa.' });
+      try {
+        const { code } = hub.pairCode(user);
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="Instalar Kodexa Conector.cmd"' });
+        return void res.end(windowsInstaller(origin.origin, code));
+      } catch (error) {
+        if (error instanceof ConnectorError) return json(res, 409, { error: error.message });
+        throw error;
+      }
+    }
     if (url.pathname.startsWith('/public/connector')) {
       if (method === 'POST') {
         const body = await readJson(req, 1024) as { id?: unknown } | null;

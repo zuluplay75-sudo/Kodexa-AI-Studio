@@ -125,7 +125,8 @@ async function startStudio() {
     const start = await browser()('/public/google');
     const state = new URL(start.headers.get('location')!).searchParams.get('state')!;
     const back = await local(ORIGIN + '/public/google/callback?' + new URLSearchParams({ code, state }), { headers: { Cookie: start.headers.getSetCookie()[0].split(';')[0] } });
-    return browser(back.headers.getSetCookie()[1].split(';')[0]);
+    const cookie = back.headers.getSetCookie()[1].split(';')[0];
+    return Object.assign(browser(cookie), { cookie });
   }
   return { local, login, dir };
 }
@@ -214,5 +215,58 @@ let i='';process.stdin.on('data',d=>i+=d).on('end',()=>process.stdout.write('ARG
     writeFileSync(bad, '#!/bin/sh\necho "Not logged in · Please run /login" >&2\nexit 1\n');
     chmodSync(bad, 0o755);
     expect(await claudeRunner(bad, work)({ id: '2', tool: 'claude', prompt: 'oi' })).toEqual({ ok: false, error: 'Not logged in · Please run /login' });
+  });
+});
+
+describe('Windows: instalador e Codex instalado pelo npm', () => {
+  it('instalador .cmd: CRLF, só ASCII, código e origem embutidos, cada goto com rótulo, valores perigosos recusados', async () => {
+    const { windowsInstaller } = await import('./windows-installer');
+    const cmd = windowsInstaller('https://studio.kodexa.ia.br', 'ABCD-EF23');
+    expect(cmd.includes('\r\n')).toBe(true);
+    expect(cmd.replace(/\r\n/g, '').includes('\n')).toBe(false);
+    expect(/^[\x09\x0a\x0d\x20-\x7e]*$/.test(cmd)).toBe(true);
+    expect(cmd).toContain('set "KODEXA_CODE=ABCD-EF23"');
+    expect(cmd).toContain('curl.exe -fsSL "%KODEXA_SERVER%/public/kodexa-conector.mjs"');
+    expect(cmd).toContain('call codex login status');
+    for (const [, label] of cmd.matchAll(/goto :(\w+)/g)) expect(cmd).toMatch(new RegExp('^:' + label + '\\r?$', 'm'));
+    const opens = (cmd.match(/\($/gm) ?? []).length;
+    const closes = (cmd.match(/^\)$/gm) ?? []).length;
+    expect(opens).toBe(closes);
+    expect(() => windowsInstaller('https://x.test"&calc', 'ABCD-EF23')).toThrow();
+    expect(() => windowsInstaller('https://studio.kodexa.ia.br', 'AB%D-EF23')).toThrow();
+    expect(() => windowsInstaller('http://studio.kodexa.ia.br', 'ABCD-EF23')).toThrow();
+  });
+
+  it('rota do instalador: só com sessão e só pedida pela própria página; o código de dentro pareia', async () => {
+    const s = await startStudio();
+    const ana = await s.login('ana');
+    expect((await s.local(ORIGIN + '/public/connector/windows.cmd')).status).toBe(401);
+    // Um link de outro site (o navegador marca Sec-Fetch-Site: cross-site) não gera código, mesmo com o cookie.
+    const crossSite = await s.local(ORIGIN + '/public/connector/windows.cmd', { headers: { Cookie: ana.cookie, 'Sec-Fetch-Site': 'cross-site' } });
+    expect(crossSite.status).toBe(403);
+    const fromPage = await s.local(ORIGIN + '/public/connector/windows.cmd', { headers: { Cookie: ana.cookie, 'Sec-Fetch-Site': 'same-origin' } });
+    expect(fromPage.status).toBe(200);
+    const res = await ana('/public/connector/windows.cmd');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-disposition')).toBe('attachment; filename="Instalar Kodexa Conector.cmd"');
+    const code = /set "KODEXA_CODE=([A-Z2-9-]+)"/.exec(await res.text())![1];
+    expect(await pair(ORIGIN, code, 'PC Windows', s.local, { codex: true })).toMatch(/^kx1\./);
+  });
+
+  it('findCodex: no Windows, usa o launcher do pacote npm com o Node (o codex.cmd não roda sem shell)', async () => {
+    const { findCodex } = await import('../../scripts/kodexa-connector');
+    const launcher = join('C:\\Users\\ana\\AppData\\Roaming', 'npm', 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+    const exists = (p: string) => p === launcher;
+    expect(findCodex({ PATH: '', APPDATA: 'C:\\Users\\ana\\AppData\\Roaming' }, 'win32', exists, 'C:\\node\\node.exe')).toEqual({ file: 'C:\\node\\node.exe', args: [launcher] });
+    expect(findCodex({ PATH: '', APPDATA: 'C:\\Users\\ana\\AppData\\Roaming' }, 'linux', exists)).toBeUndefined();
+    expect(findCodex({ KODEXA_CODEX_BIN: '/opt/codex' }, 'linux', (p) => p === '/opt/codex')).toEqual({ file: '/opt/codex', args: [] });
+  });
+
+  it('codexRunner com launcher: o Node roda o codex.js antes dos argumentos do exec', async () => {
+    const dir = tempDir('kx-bin-');
+    const launcher = join(dir, 'codex.js');
+    writeFileSync(launcher, `const fs=require('fs');const a=process.argv.slice(2);process.stdin.resume();process.stdin.on('end',()=>fs.writeFileSync(a[a.indexOf('--output-last-message')+1],'via launcher: '+a[0]));`);
+    const r = await codexRunner({ file: process.execPath, args: [launcher] }, tempDir('kx-work-'))({ id: '1', tool: 'codex', prompt: 'oi' });
+    expect(r).toEqual({ ok: true, text: 'via launcher: exec' });
   });
 });
