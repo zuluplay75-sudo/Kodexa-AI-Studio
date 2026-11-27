@@ -125,6 +125,7 @@ export function createPublicStudio(options: {
     if (method === 'GET') {
       const resource = url.pathname === '/public/' ? ['text/html', publicStudioPage] :
         url.pathname === '/public/studio.css' ? ['text/css', publicStudioStyles] :
+        url.pathname === '/public/office.js' ? ['text/javascript', readFileSync(new URL('./public-office.js', import.meta.url), 'utf8')] :
         url.pathname === '/public/studio.js' ? ['text/javascript', publicStudioScript] : undefined;
       if (resource) {
         res.setHeader('Content-Security-Policy', "default-src 'none'; connect-src 'self'; script-src 'self'; style-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'");
@@ -287,3 +288,4 @@ export function createPublicStudio(options: {
     return json(res, 201, studio.create({ brief: (body as { brief?: unknown } | null)?.brief, research: false }));
   }
 }
+

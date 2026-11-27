@@ -4,15 +4,17 @@ export const publicStudioPage = `<!doctype html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Projetos | Kodexa AI Studio</title>
-<link rel="stylesheet" href="/public/studio.css"><script defer src="/public/studio.js"></script>
+<title>Escritório | Kodexa AI Studio</title>
+<link rel="stylesheet" href="/public/studio.css"><script defer src="/public/office.js"></script><script defer src="/public/studio.js"></script>
 </head>
 <body><main>
-<p>Kodexa AI Studio</p><h1>Meus projetos</h1>
+<header>Kodexa AI Studio</header>
 <a id="login" href="/public/google" hidden>Entrar com Google</a>
 <section id="projects" hidden>
+<canvas id="office-map" aria-label="Escritório Kodexa"></canvas>
+<nav aria-label="Escritório"><button data-panel="work">Projetos IA</button><button data-panel="settings">Configurar estúdio</button></nav>
 <button id="logout" type="button">Sair</button>
-<details open><summary>Minha IA para projetos</summary>
+<section class="panel" id="settings" hidden><button data-close>Voltar ao escritório</button><h1>Configurar estúdio</h1><details open><summary>Minha IA para projetos</summary>
 <form id="provider">
 <label for="vendor">Qual IA você quer usar?</label>
 <select id="vendor"><option value="openai">OpenAI</option><option value="anthropic">Claude (Anthropic)</option><option value="gemini">Gemini (Google)</option></select>
@@ -36,15 +38,21 @@ export const publicStudioPage = `<!doctype html>
 <p>Use o escritório do Kodexa no mesmo computador ou ambiente em que suas sessões do Codex e do Claude Code rodam. O escritório detecta essas sessões depois que você entra nas ferramentas pelo terminal.</p>
 <p><a href="http://127.0.0.1:4747/">Abrir escritório neste computador</a></p><p>No celular, use o acesso remoto da sua instalação. O responsável pelo Codespace do Kodexa pode entrar com usuário e senha.</p><p><a href="https://kodexa.ia.br/login">Abrir escritório do responsável</a></p>
 </details>
-<form id="create"><label for="brief">Descreva seu projeto</label>
+</section><section class="panel" id="work" hidden><button data-close>Voltar ao escritório</button><h1>Meus projetos</h1><form id="create"><label for="brief">Descreva seu projeto</label>
 <textarea id="brief" minlength="10" maxlength="4000" required></textarea>
-<button type="submit">Criar projeto</button></form><ul id="list"></ul>
+<button type="submit">Criar projeto</button></form><ul id="list"></ul></section>
 </section>
 <p id="status" role="status"></p>
 </main></body></html>`;
 
 export const publicStudioStyles = `
 :root { color-scheme: dark; background: #101626; color: #eef3ff; font: 16px/1.5 system-ui; }
+header { position: fixed; inset: 0 0 auto; height: 3rem; box-sizing:border-box; padding:.65rem 1rem; background:#202a38; font-weight:bold; }
+#office-map { position:fixed; inset:3rem 0 0; width:100%; height:calc(100dvh - 3rem); touch-action:none; }
+nav { position:fixed; right:.75rem; bottom:1rem; display:grid; gap:.5rem; }
+#logout { position:fixed; right:.5rem; top:.2rem; padding:.35rem .8rem; }
+.panel { position:fixed; inset:3rem 0 0 auto; box-sizing:border-box; width:min(100%,48rem); padding:1rem; overflow:auto; background:#101626; }
+#status:not(:empty) { position:fixed; bottom:0; left:.5rem; max-width:80vw; background:#101626; }
 main { max-width: 46rem; margin: 4rem auto; padding: 0 1.25rem; }
 main > p:first-child { color: #8cd8ff; font-weight: 650; margin-bottom: 0; }
 h1 { margin-top: .25rem; }
@@ -64,6 +72,13 @@ li { background: #17223a; padding: .85rem; margin: .5rem 0; border-radius: .5rem
 export const publicStudioScript = `
 const login = document.getElementById('login');
 const projects = document.getElementById('projects');
+for (const button of document.querySelectorAll('[data-panel], [data-close]')) {
+  button.onclick = () => {
+    for (const panel of document.querySelectorAll('.panel')) panel.hidden = panel.id !== button.dataset.panel;
+    if (button.dataset.panel) document.querySelector('#' + button.dataset.panel + ' [data-close]').focus();
+    else document.querySelector('[data-panel="' + button.closest('.panel').id + '"]').focus();
+  };
+}
 const list = document.getElementById('list');
 const status = document.getElementById('status');
 const brief = document.getElementById('brief');
@@ -257,6 +272,7 @@ async function refresh() {
     history.replaceState(null, '', cleanUrl);
     if (status.textContent === loginMessages[loginResult]) status.textContent = '';
   }
+  window.dispatchEvent(new Event("kodexa-office-ready"));
   const rows = await response.json();
   if (rows.length) list.replaceChildren(...rows.map(renderProject));
   else list.textContent = 'Nenhum projeto criado.';
@@ -302,3 +318,4 @@ const loginMessages = {
 
 refresh().then(refreshConnection).catch(showError);
 `;
+

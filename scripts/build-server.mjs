@@ -14,5 +14,15 @@ await build({
   logLevel: 'info',
 });
 
+await build({
+  entryPoints: ['client/src/public-office.ts'],
+  outfile: 'dist/server/public-office.js',
+  bundle: true,
+  platform: 'browser',
+  format: 'iife',
+  minify: true,
+});
+
 const info = writeBuildInfo('dist/build.json');
 console.log(`  dist/build.json  ${info.commit === 'unknown' ? 'unknown' : info.commit.slice(0, 12)}${info.dirty ? ' (dirty)' : ''}`);
+
