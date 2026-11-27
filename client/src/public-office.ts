@@ -137,19 +137,24 @@ async function start(){
           }));
           if(!list.length)devices.append(el('li','Nenhum computador pareado ainda.'));
         };
-        const loadDevices=()=>request<{devices:Device[]}>('/public/connector').then(r=>renderDevices(r.devices)).catch(e=>feedback.textContent=(e as Error).message);
-        void loadDevices();
+        const store=el('div');
+        const loadDevices=()=>request<{devices:Device[];storeUrl:string|null}>('/public/connector').then(r=>{renderDevices(r.devices);
+          // Publicado na Microsoft Store: no Windows, instalar pela loja é o caminho principal (assinado, sem aviso).
+          if(r.storeUrl&&platform==='windows'&&tool==='codex'&&!store.childElementCount){const a=el('a','Instalar pela Microsoft Store');a.href=r.storeUrl;a.target='_blank';a.rel='noopener noreferrer';a.className='kodexa-ai__link';
+            store.append(a,el('p','Depois de instalar, abra o Kodexa Conector: ele mostra um código e abre o navegador para você autorizar este computador.'));}
+        }).catch(e=>feedback.textContent=(e as Error).message);
         // Enquanto o diálogo está aberto, a lista acompanha o conector ligando (depois do instalador ou dos comandos).
         const timer=setInterval(()=>{if(!panel.isConnected)clearInterval(timer);else void loadDevices();},5000);
         const platform=platformOf(navigator.userAgent,(navigator as Navigator&{userAgentData?:{platform?:string}}).userAgentData?.platform);
         const tool=choice==='claude-local'?'claude':'codex';
+        void loadDevices();
         const generate=action(platform==='windows'&&tool==='codex'?'Prefiro usar comandos no terminal':'Gerar código de pareamento',b=>void (async()=>{b.disabled=true;try{
           const r=await request<{code:string;expiresAt:number;server:string}>('/public/connector/pair',{});
           pairing.replaceChildren(el('p','Código: '+r.code+' (vale por 10 minutos, uma vez). Com o Node.js instalado, rode no terminal do seu computador:'));
           for(const option of connectorCommands(r.server,r.code,tool,platform))pairing.append(el('h5',option.terminal),el('pre',option.lines.join('\n')));
           pairing.append(el('p','Deixe a janela do conector aberta. Quando ele estiver ligado, este painel mostra o computador como ligado.'));
         }catch(e){feedback.textContent=(e as Error).message;}finally{b.disabled=false;}})());
-        panel.append(el('h4','Seus computadores'),devices);
+        panel.append(el('h4','Seus computadores'),devices,store);
         if(platform==='windows'&&tool==='codex'){
           // Windows: um instalador com o código dentro (dois cliques), que instala o que faltar e pareia.
           const installer=el('a','Baixar instalador para Windows');installer.href='/public/connector/windows.cmd';installer.className='kodexa-ai__link';installer.setAttribute('download','Instalar Kodexa Conector.cmd');

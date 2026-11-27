@@ -23,6 +23,8 @@ const server = createPublicStudio({
   credentialKey: vaultKey(process.env.KODEXA_CREDENTIALS_KEY),
   // ChatGPT do cliente: só com a liberação da OpenAI (KODEXA_CHATGPT_CLIENT_ID e KODEXA_CHATGPT_MODEL).
   chatgpt: chatgptConfig(process.env, KODEXA_PUBLIC_ORIGIN),
+  // Link do Kodexa Conector na Microsoft Store (só https da Microsoft), quando publicado.
+  connectorStoreUrl: /^https:\/\/(apps\.microsoft\.com|www\.microsoft\.com)\//.test(process.env.KODEXA_CONECTOR_STORE_URL ?? '') ? process.env.KODEXA_CONECTOR_STORE_URL : undefined,
 });
 const hosted = process.env.RENDER === 'true';
 server.listen(hosted ? Number(process.env.PORT || 10000) : 4750, hosted ? '0.0.0.0' : '127.0.0.1');

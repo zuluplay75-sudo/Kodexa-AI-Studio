@@ -105,6 +105,8 @@ export function createPublicStudio(options: {
   credentialKey?: Buffer;
   /** ChatGPT do cliente: só com a liberação da OpenAI (ver chatgpt.ts); ausente = aguardando liberação. */
   chatgpt?: ChatGPTConfig;
+  /** Página do Kodexa Conector na Microsoft Store, depois de publicado (o painel oferece no Windows). */
+  connectorStoreUrl?: string;
   /** Pasta dos arquivos de /assets/ (padrão: dist/client/assets, ao lado do servidor compilado). */
   assetsDir?: string;
 }) {
@@ -417,7 +419,7 @@ export function createPublicStudio(options: {
         if (!request) return json(res, 404, { error: 'Pedido de autorização inválido ou vencido. Abra o Kodexa Conector de novo.' });
         return json(res, 200, { request });
       } else if (method !== 'GET' || url.pathname !== '/public/connector') return json(res, 405, { error: 'Método não permitido.' });
-      return json(res, 200, { devices: hub.view(user) });
+      return json(res, 200, { devices: hub.view(user), storeUrl: options.connectorStoreUrl ?? null });
     }
 
     if (url.pathname === '/public/provider') {

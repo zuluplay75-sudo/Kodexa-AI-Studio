@@ -156,6 +156,7 @@ describe('Kodexa Conector de ponta a ponta (servidor público + conector real + 
     const fakeCodex: Runner = async (job) => { seen.push(job.prompt); return { ok: true, text: 'Plano feito pelo Codex do cliente' }; };
     expect(await round(ORIGIN, token, { codex: fakeCodex }, { wait: false, fetcher: s.local })).toBe(0); // marca presença
     expect((await (await ana('/public/connector')).json()).devices[0]).toMatchObject({ name: 'Notebook', online: true, tools: { codex: true, claude: false } });
+    expect((await (await ana('/public/connector')).json()).storeUrl).toBeNull(); // sem app publicado, sem link da Store
     expect((await ana('/public/projects/' + p.id + '/next', {})).status).toBe(202);
     expect(await round(ORIGIN, token, { codex: fakeCodex }, { wait: true, fetcher: s.local })).toBe(1);
     await vi.waitFor(async () => {
