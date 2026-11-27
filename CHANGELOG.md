@@ -10,6 +10,13 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+- Escritório público ao vivo: o agente de cada etapa aparece trabalhando (na fila do seu computador, planejando no seu
+  computador ou com a IA escolhida), levanta a mão quando o projeto espera a sua decisão e alimenta o feed de
+  atividade; os contadores "trabalhando" e "precisa de você" passam a refletir os projetos da conta.
+- Construir no seu computador: com o planejamento concluído e a sua confirmação, o Kodexa Conector faz o Codex criar o
+  projeto numa pasta só dele (Kodexa/Projetos), sem internet; Projetos IA mostra o resumo, os arquivos, a pasta e a
+  prévia do index.html, que abre isolada do Kodexa. Dá para construir de novo continuando na mesma pasta.
+
 - Kodexa Conector no Windows: instalador de dois cliques (com o código de pareamento dentro) que instala o que faltar,
   faz o login do Codex e conecta o computador; o conector passa a encontrar o Codex instalado pelo npm no Windows; o
   painel mostra os comandos certos para cmd, PowerShell e Mac/Linux e atualiza sozinho quando o computador liga.

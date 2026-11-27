@@ -59,7 +59,21 @@ Em **Seus computadores** deve aparecer o seu computador como **ligado · Codex**
 6. Siga executando as etapas seguintes (Manager, Academy, Design, Network, Dev, QA, Shield). Cada uma usa o resultado
    das anteriores.
 
-## 5. Pelo celular
+## 5. Acompanhar no escritório
+
+Enquanto uma etapa roda, o agente dela aparece **trabalhando** no escritório (ponto verde, "Planejando no seu
+computador") e o contador **trabalhando** sobe. Quando o Scout termina, ele **levanta a mão**: o projeto espera a sua
+decisão (contador **precisa de você**). O painel **Atividade**, embaixo, lista o que cada agente concluiu.
+
+## 6. Construir o projeto
+
+Com as 8 etapas do planejamento concluídas, abra o projeto em **Projetos IA** e clique em
+**Construir no meu computador**. O Codex cria o projeto numa pasta só dele, em `Kodexa\Projetos` dentro da sua pasta
+de usuário, sem acesso à internet. Enquanto isso, o Kodexa Dev aparece trabalhando no escritório. No fim, o projeto
+mostra o resumo, a lista de arquivos e, se for um app web, **Abrir prévia**. Para melhorar, clique em
+**Construir de novo**: ele continua a partir do que já está na pasta.
+
+## 7. Pelo celular
 
 Abra **https://kodexa.ia.br/login** no celular e entre com a mesma conta Google. Você vê o mesmo escritório e os
 mesmos projetos e pode executar etapas. Elas rodam no seu computador, então **ele precisa estar ligado** com o
@@ -76,8 +90,8 @@ conector aberto (e com internet).
 | Quero desconectar este computador | Configurar estúdio › Seus computadores › **Remover**. |
 | Trocar a conta ou o computador | No Prompt de Comando, na pasta do conector: `KodexaConector.exe --esquecer`, e abra de novo. |
 
-As tarefas são de **planejamento** (texto): o conector roda o Codex numa pasta só do Kodexa e em modo somente leitura.
-Nada é editado nem executado nos seus arquivos.
+No planejamento, o conector roda o Codex em modo somente leitura. Na construção, o Codex escreve **só** na pasta do
+projeto em `Kodexa\\Projetos`, sem internet. Nada fora dessas pastas é editado.
 
 ## Mac ou Linux
 

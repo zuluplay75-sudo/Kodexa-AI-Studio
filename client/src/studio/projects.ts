@@ -12,7 +12,7 @@ async function api<T>(path:string,body?:unknown):Promise<T>{
   if(!r.ok)throw new Error(typeof data?.error==='string'?data.error:'Não foi possível acessar o estúdio.');
   return data as T;
 }
-export function mountProjects(personal?: { request: typeof api; team: (project: StudioProject)=>HTMLElement }){
+export function mountProjects(personal?: { request: typeof api; team: (project: StudioProject)=>HTMLElement; build?: (project: StudioProject)=>HTMLElement }){
   const request = personal?.request ?? api;
   if(document.getElementById('kodexa-projects-launch'))return;
   const dialog=el('dialog');dialog.id='kodexa-projects';dialog.setAttribute('aria-label','Projetos Kodexa');
@@ -104,7 +104,7 @@ export function mountProjects(personal?: { request: typeof api; team: (project: 
     }else if(p.state==='running'){const update=btn('Atualizar estado',()=>void refresh());update.disabled=busy;content.append(update);}
     else if(p.state==='complete'){
       content.append(el('p','Planejamento concluído. A execução de código exige autorização separada.'));
-      if(personal)return;
+      if(personal){if(personal.build)content.append(personal.build(p));return;}
       if(p.delivery){
         const reports=el('details');reports.append(el('summary','Arquivos e relatórios das sessões'),el('p',p.delivery.workspace));
         for(const step of p.delivery.steps){const d=el('details');d.append(el('summary',step.role+' — relatório da sessão'),el('pre',step.report));reports.append(d);}

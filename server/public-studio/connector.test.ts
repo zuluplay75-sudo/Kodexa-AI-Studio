@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createPublicStudio } from './app';
 import { ConnectorHub } from './connector';
-import { authorize, claudeRunner, codexRunner, nodeForLauncher, pair, round, type Runner } from '../../scripts/kodexa-connector';
+import { authorize, claudeRunner, codexBuildRunner, codexRunner, listFiles, nodeForLauncher, pair, round, type Runner } from '../../scripts/kodexa-connector';
 
 const ORIGIN = 'https://studio.example.test';
 const closers: (() => unknown)[] = [];
@@ -339,5 +339,93 @@ describe('conector sem rede', () => {
   it('falha de conexão vira mensagem em português com o endereço', async () => {
     const offline: typeof fetch = async () => { throw new TypeError('fetch failed'); };
     await expect(pair('https://studio.kodexa.ia.br', 'AAAA-BBBB', 'pc', offline)).rejects.toThrow('Sem conexão com o Kodexa em https://studio.kodexa.ia.br. Confira a internet e tente de novo.');
+  });
+});
+
+describe('construir o projeto no computador do cliente (item 3) e o escritório ao vivo (item 2)', () => {
+  it('planeja as 8 etapas pelo conector, constrói com aprovação, mostra arquivos e a prévia isolada; outra conta não vê', async () => {
+    const s = await startStudio();
+    const ana = await s.login('ana');
+    const bia = await s.login('bia');
+    const token = await authorize(ORIGIN, 'Notebook', { codex: true }, { fetcher: s.local, sleep: async () => {}, open: async (url) => {
+      await ana('/public/connector/approve', { id: new URL(url).searchParams.get('conectar') }); return { ok: true };
+    } });
+    const plan: Runner = async (job) => ({ ok: true, text: 'Relatório: ' + (/papel de ([^.]+)\./.exec(job.prompt)?.[1] ?? '?') });
+    const p = await (await ana('/public/projects', { brief: 'Agenda da oficina HP — teste', research: false })).json();
+    await round(ORIGIN, token, { codex: plan }, { wait: false, fetcher: s.local });
+
+    // Item 2: com a etapa na fila do computador, o Scout aparece trabalhando no escritório.
+    expect((await ana('/public/projects/' + p.id + '/next', {})).status).toBe(202);
+    await vi.waitFor(async () => expect((await (await ana('/public/activity')).json()).roles.scout).toMatchObject({ status: 'working', text: 'Na fila do seu computador' }));
+    await round(ORIGIN, token, { codex: plan }, { wait: true, fetcher: s.local });
+    await vi.waitFor(async () => expect((await (await ana('/public/activity')).json()).roles.scout).toMatchObject({ status: 'waiting', text: 'Aguardando sua decisão' }));
+    expect((await (await bia('/public/activity')).json()).roles).toEqual({});
+
+    // Construir antes do fim do planejamento: recusado.
+    expect((await ana('/public/projects/' + p.id + '/build', { approved: true })).status).toBe(409);
+    await ana('/public/projects/' + p.id + '/approve', { decision: 'Agenda simples no navegador' });
+    for (let i = 0; i < 7; i++) {
+      const r = await ana('/public/projects/' + p.id + '/next', {});
+      expect(r.status, await r.clone().text()).toBe(202);
+      await round(ORIGIN, token, { codex: plan }, { wait: true, fetcher: s.local });
+      await vi.waitFor(async () => expect((await (await ana('/public/projects')).json())[0].state).not.toBe('running'));
+    }
+    expect((await (await ana('/public/projects')).json())[0].state).toBe('complete');
+
+    // Sem a confirmação explícita, não constrói; com ela, vai para o computador como tarefa de construção.
+    expect((await ana('/public/projects/' + p.id + '/build', {})).status).toBe(400);
+    expect((await bia('/public/projects/' + p.id + '/build', { approved: true })).status).toBe(404);
+    const started = await ana('/public/projects/' + p.id + '/build', { approved: true });
+    expect(started.status).toBe(202);
+    const folder = (await started.json()).folder;
+    expect(folder).toMatch(/^agenda-da-oficina-hp-teste-[0-9a-f]{8}$/);
+    expect((await ana('/public/projects/' + p.id + '/build', { approved: true })).status).toBe(409); // já em andamento
+    await vi.waitFor(async () => expect((await (await ana('/public/activity')).json()).roles.dev).toMatchObject({ status: 'working' }));
+    let received: { kind?: string; folder?: string; prompt: string } | undefined;
+    const build: Runner = async (job) => {
+      received = job;
+      return { ok: true, text: 'Agenda criada. Abra o index.html.', files: [{ path: 'index.html', size: 120 }, { path: 'README.md', size: 40 }, { path: '../fora.txt', size: 1 }], preview: '<!doctype html><h1>Agenda</h1><script>document.title="ok"</script>', folder: '/home/ana/Kodexa/Projetos/' + job.folder };
+    };
+    await round(ORIGIN, token, { codex: plan, build }, { wait: true, fetcher: s.local });
+    expect(received).toMatchObject({ kind: 'build', folder });
+    expect(received!.prompt).toContain('Agenda simples no navegador');
+    expect(received!.prompt).toContain('Relatório: Kodexa Manager');
+    await vi.waitFor(async () => expect((await (await ana('/public/projects')).json())[0].build.state).toBe('done'));
+    const done = (await (await ana('/public/projects')).json())[0].build;
+    expect(done).toMatchObject({ summary: 'Agenda criada. Abra o index.html.', hasPreview: true, folder: '/home/ana/Kodexa/Projetos/' + folder });
+    expect(done.files).toEqual([{ path: 'index.html', size: 120 }, { path: 'README.md', size: 40 }]); // caminho para fora descartado
+
+    // Prévia: página isolada (sandbox, origem opaca), só da conta dona.
+    const preview = await ana('/public/projects/' + p.id + '/preview');
+    expect(preview.status).toBe(200);
+    expect(preview.headers.get('content-security-policy')).toMatch(/^sandbox allow-scripts allow-forms allow-modals; default-src 'none'/);
+    expect(preview.headers.get('content-security-policy')).not.toContain('allow-same-origin');
+    expect(await preview.text()).toContain('<h1>Agenda</h1>');
+    expect((await bia('/public/projects/' + p.id + '/preview')).status).toBe(404);
+    const activity = await (await ana('/public/activity')).json();
+    expect(activity.roles.dev).toBeUndefined();
+    expect(activity.feed.at(-1)).toMatchObject({ role: 'dev', text: 'Kodexa Dev entregou 2 arquivos' });
+  });
+
+  it('executor de construção: Codex com escrita só na pasta do projeto, lista os arquivos e lê o index.html', async () => {
+    const dir = tempDir('kx-bin-');
+    const bin = join(dir, 'codex');
+    // Codex falso: grava os argumentos, cria arquivos na pasta atual (a do projeto) e responde.
+    writeFileSync(bin, `#!/usr/bin/env node
+const fs=require('fs');const a=process.argv.slice(2);let input='';process.stdin.on('data',d=>input+=d).on('end',()=>{
+fs.writeFileSync(${JSON.stringify(join(dir, 'args.json'))},JSON.stringify({a,cwd:process.cwd()}));
+fs.writeFileSync('index.html','<h1>Oi</h1>');fs.mkdirSync('src',{recursive:true});fs.writeFileSync('src/app.js','1');
+fs.mkdirSync('node_modules/x',{recursive:true});fs.writeFileSync('node_modules/x/i.js','');fs.writeFileSync('.env','SEGREDO=1');
+fs.writeFileSync(a[a.indexOf('--output-last-message')+1],'Feito.');});`);
+    chmodSync(bin, 0o755);
+    const root = tempDir('kx-projetos-');
+    const result = await codexBuildRunner(bin, root)({ id: '1', tool: 'codex', prompt: 'construa', kind: 'build', folder: 'app-oficina-1234abcd' });
+    expect(result).toMatchObject({ ok: true, text: 'Feito.', preview: '<h1>Oi</h1>', folder: join(root, 'app-oficina-1234abcd'), files: [{ path: 'index.html', size: 11 }, { path: 'src/app.js', size: 1 }] });
+    const call = JSON.parse(readFileSync(join(dir, 'args.json'), 'utf8'));
+    expect(call.a).toEqual(['exec', '--sandbox', 'workspace-write', '--skip-git-repo-check', '--ephemeral', '--color', 'never', '--output-last-message', expect.any(String), '-']);
+    expect(call.cwd).toBe(join(root, 'app-oficina-1234abcd'));
+    expect(call.a[8].startsWith(join(root, 'app-oficina-1234abcd'))).toBe(false); // a resposta não fica na pasta do cliente
+    expect(await codexBuildRunner(bin, root)({ id: '2', tool: 'codex', prompt: 'x', kind: 'build', folder: '../fora' })).toEqual({ ok: false, error: 'pasta do projeto inválida' });
+    expect(listFiles(join(root, 'app-oficina-1234abcd')).map((f) => f.path)).toEqual(['index.html', 'src/app.js']); // sem .env nem node_modules
   });
 });

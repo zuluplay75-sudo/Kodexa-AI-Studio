@@ -36,3 +36,6 @@ body{margin:0;background:#16222c;color:#edf2ff;font:16px system-ui}
 .kodexa-authorize__code{font:700 1.6rem ui-monospace,monospace;letter-spacing:.2em;text-align:center;margin:.6rem 0}
 .kodexa-authorize button{margin:.3rem .3rem 0 0;padding:.55rem 1rem;border-radius:.4rem;border:1px solid #65708b;background:#26364b;color:#fff;font-weight:600}
 .kodexa-authorize .kodexa-primary{background:#10a37f;border-color:transparent}
+.kodexa-build{display:grid;gap:.45rem;margin:.6rem 0;padding:.75rem;border:1px solid #526578;border-radius:.5rem;background:#1b2634}
+.kodexa-build h4,.kodexa-build p{margin:0}
+.kodexa-build pre{white-space:pre-wrap;max-height:16rem;overflow:auto}

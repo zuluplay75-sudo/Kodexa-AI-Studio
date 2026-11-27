@@ -380,6 +380,11 @@ export class OfficeStore {
     this.applySnapshot(snap);
   }
 
+  /** Escritório público: itens do feed montados a partir da atividade da conta (o original recebe pelo SSE). */
+  receivePersonalFeed(items: FeedItem[]): void {
+    this.applyFeed(items);
+  }
+
   private applySnapshot(snap: OfficeSnapshot): void {
     const cur = this.replay ? this.live?.snap : this.snapshot;
     if (cur && snap.rev < cur.rev && snap.meta.startedAt === cur.meta.startedAt) return;

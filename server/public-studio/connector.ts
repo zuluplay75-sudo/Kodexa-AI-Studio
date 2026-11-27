@@ -22,12 +22,23 @@ const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 export type Device = { id: string; name: string; hash: string; createdAt: number };
 export type DeviceView = { id: string; name: string; createdAt: number; online: boolean; tools: Record<LocalTool, boolean> };
-export type ConnectorJob = { id: string; tool: LocalTool; prompt: string };
+/** Tarefa para o conector: planejar (texto, somente leitura) ou construir (escreve só na pasta do projeto). */
+export type JobKind = 'plan' | 'build';
+export type ConnectorJob = { id: string; tool: LocalTool; prompt: string; kind: JobKind; folder?: string };
+/** De qual projeto e etapa é a tarefa (para o escritório mostrar o agente trabalhando). */
+export type JobMeta = { kind?: JobKind; projectId?: string; role?: string; folder?: string };
+export type BuiltFile = { path: string; size: number };
+export type JobResult = { text: string; files?: BuiltFile[]; preview?: string; folder?: string };
+export type JobView = { projectId?: string; role?: string; kind: JobKind; tool: LocalTool; state: 'queued' | 'running'; since: number; device?: string };
+export const PREVIEW_MAX = 400_000;
 
 type Pending = ConnectorJob & {
   user: string;
+  meta: JobMeta;
+  queuedAt: number;
+  startedAt?: number;
   deviceId?: string;
-  resolve: (text: string) => void;
+  resolve: (result: JobResult) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 };
@@ -205,17 +216,22 @@ export class ConnectorHub {
     return views.some((v) => v.online) ? 'missing' : 'offline';
   }
 
-  /** Põe a tarefa na fila da conta e espera o resultado do conector. */
-  run(user: string, tool: LocalTool, prompt: string, timeoutMs = JOB_TIMEOUT_MS): Promise<string> {
+  /** Põe a tarefa na fila da conta e espera o texto do conector (planejamento). */
+  run(user: string, tool: LocalTool, prompt: string, timeoutMs = JOB_TIMEOUT_MS, meta: JobMeta = {}): Promise<string> {
+    return this.runJob(user, tool, prompt, timeoutMs, meta).then((r) => r.text);
+  }
+
+  /** Põe a tarefa na fila da conta e espera o resultado completo (construção: arquivos e prévia). */
+  runJob(user: string, tool: LocalTool, prompt: string, timeoutMs = JOB_TIMEOUT_MS, meta: JobMeta = {}): Promise<JobResult> {
     if (this.status(user, tool) !== 'online') {
       return Promise.reject(new ConnectorError(tool === 'codex'
         ? 'Seu computador com o Kodexa Conector está desligado ou sem o Codex. Ligue o computador e abra o conector para continuar.'
         : 'Seu computador com o Kodexa Conector está desligado ou sem o Claude Code. Ligue o computador e abra o conector para continuar.'));
     }
     if ((this.jobs.get(user)?.length ?? 0) >= 20) return Promise.reject(new ConnectorError('Muitas tarefas na fila do seu computador. Aguarde as atuais terminarem.'));
-    return new Promise<string>((resolve, reject) => {
+    return new Promise<JobResult>((resolve, reject) => {
       const job: Pending = {
-        id: randomUUID(), tool, prompt: prompt.slice(0, PROMPT_MAX), user, resolve, reject,
+        id: randomUUID(), tool, prompt: prompt.slice(0, PROMPT_MAX), kind: meta.kind ?? 'plan', folder: meta.folder, user, meta, queuedAt: this.now(), resolve, reject,
         timer: setTimeout(() => this.finish(user, job.id, new ConnectorError('Seu computador não devolveu a tarefa a tempo. Confira o conector e tente novamente.')), timeoutMs),
       };
       const list = this.jobs.get(user) ?? [];
@@ -225,21 +241,30 @@ export class ConnectorHub {
     });
   }
 
-  private finish(user: string, id: string, result: Error | string) {
+  /** Tarefas da conta em andamento (na fila ou no computador), para o escritório. */
+  jobsFor(user: string): JobView[] {
+    const names = new Map(this.devices(user).map((d) => [d.id, d.name]));
+    return (this.jobs.get(user) ?? []).map((j) => ({
+      projectId: j.meta.projectId, role: j.meta.role, kind: j.kind, tool: j.tool,
+      state: j.deviceId ? 'running' : 'queued', since: j.startedAt ?? j.queuedAt, device: j.deviceId ? names.get(j.deviceId) : undefined,
+    }));
+  }
+
+  private finish(user: string, id: string, result: Error | JobResult) {
     const list = this.jobs.get(user) ?? [];
     const job = list.find((j) => j.id === id);
     if (!job) return false;
     clearTimeout(job.timer);
     this.jobs.set(user, list.filter((j) => j !== job));
-    if (typeof result === 'string') job.resolve(result);
-    else job.reject(result);
+    if (result instanceof Error) job.reject(result);
+    else job.resolve(result);
     return true;
   }
 
   private take(user: string, deviceId: string, tools: Record<LocalTool, boolean>): ConnectorJob[] {
     const free = (this.jobs.get(user) ?? []).filter((j) => !j.deviceId && tools[j.tool]).slice(0, 2);
-    for (const job of free) job.deviceId = deviceId;
-    return free.map(({ id, tool, prompt }) => ({ id, tool, prompt }));
+    for (const job of free) { job.deviceId = deviceId; job.startedAt = this.now(); }
+    return free.map(({ id, tool, prompt, kind, folder }) => ({ id, tool, prompt, kind, ...(folder ? { folder } : {}) }));
   }
 
   /** Pergunta do conector: marca presença e devolve trabalho; com `waitMs`, espera até chegar algo. */
@@ -263,10 +288,21 @@ export class ConnectorHub {
 
   /** Resultado do conector. Só vale a confirmação do computador que pegou a tarefa. */
   ack(user: string, deviceId: string, raw: unknown): boolean {
-    const body = (raw ?? {}) as { id?: unknown; ok?: unknown; text?: unknown; error?: unknown };
+    const body = (raw ?? {}) as { id?: unknown; ok?: unknown; text?: unknown; error?: unknown; files?: unknown; preview?: unknown; folder?: unknown };
     const job = (this.jobs.get(user) ?? []).find((j) => j.id === body.id && j.deviceId === deviceId);
     if (!job) return false;
-    if (body.ok === true && typeof body.text === 'string' && body.text.trim()) return this.finish(user, job.id, body.text.slice(0, RESULT_MAX));
+    if (body.ok === true && typeof body.text === 'string' && body.text.trim()) {
+      const result: JobResult = { text: body.text.slice(0, RESULT_MAX) };
+      if (job.kind === 'build') {
+        // Só o que o painel mostra: caminhos relativos e tamanhos (sem conteúdo), a prévia HTML e a pasta.
+        result.files = (Array.isArray(body.files) ? body.files : []).slice(0, 500).flatMap((f: { path?: unknown; size?: unknown }) =>
+          typeof f?.path === 'string' && f.path.length <= 300 && !f.path.startsWith('/') && !f.path.split(/[\\/]/).includes('..') && typeof f.size === 'number' && f.size >= 0
+            ? [{ path: f.path.replace(/\\/g, '/'), size: Math.floor(f.size) }] : []);
+        if (typeof body.preview === 'string' && body.preview.length <= PREVIEW_MAX) result.preview = body.preview;
+        if (typeof body.folder === 'string') result.folder = body.folder.slice(0, 300);
+      }
+      return this.finish(user, job.id, result);
+    }
     const reason = typeof body.error === 'string' ? body.error.replace(/[\r\n]+/g, ' ').slice(0, 300) : '';
     const name = job.tool === 'codex' ? 'O Codex' : 'O Claude Code';
     return this.finish(user, job.id, new ConnectorError(name + ' no seu computador não concluiu a tarefa' + (reason ? ': ' + reason : '.')));

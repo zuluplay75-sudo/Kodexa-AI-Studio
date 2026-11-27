@@ -17,8 +17,8 @@
 // - Sem shell (execFile), com prazo, e o pedido vai pela entrada padrão (nunca vira opção na linha de comando).
 // - O Claude Code só entra com --com-claude: confira os termos de uso do seu plano Claude antes de ligar.
 import { execFile } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { homedir, hostname } from 'node:os';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { homedir, hostname, tmpdir } from 'node:os';
 import { delimiter, isAbsolute, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { findCodexBin } from '../server/messages/codex';
@@ -46,8 +46,8 @@ const TASK_TIMEOUT_MS = 12 * 60_000;
 const OUTPUT_MAX = 40_000;
 
 export type Tool = 'codex' | 'claude';
-export type Job = { id: string; tool: Tool; prompt: string };
-export type JobResult = { ok: true; text: string } | { ok: false; error: string };
+export type Job = { id: string; tool: Tool; prompt: string; kind?: 'plan' | 'build'; folder?: string };
+export type JobResult = { ok: true; text: string; files?: { path: string; size: number }[]; preview?: string; folder?: string } | { ok: false; error: string };
 export type Runner = (job: Job) => Promise<JobResult>;
 
 function firstLine(s: string | undefined): string {
@@ -104,6 +104,55 @@ export function codexRunner(codex: Command | string, workRoot: string, timeoutMs
       return text.trim() ? { ok: true, text: text.slice(0, OUTPUT_MAX) } : { ok: false, error: 'o Codex não devolveu texto' };
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  };
+}
+
+const BUILD_TIMEOUT_MS = 40 * 60_000;
+const PREVIEW_MAX = 400_000;
+
+/** Arquivos da pasta do projeto (caminhos relativos e tamanhos), sem .git, node_modules nem pastas ocultas. */
+export function listFiles(root: string, max = 500): { path: string; size: number }[] {
+  const out: { path: string; size: number }[] = [];
+  const walk = (dir: string, prefix: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (out.length >= max) return;
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const rel = prefix ? prefix + '/' + entry.name : entry.name;
+      if (entry.isDirectory()) walk(join(dir, entry.name), rel);
+      else if (entry.isFile()) out.push({ path: rel, size: statSync(join(dir, entry.name)).size });
+    }
+  };
+  walk(root, '');
+  return out;
+}
+
+/**
+ * Construção: o Codex escreve SÓ na pasta do projeto (~/Kodexa/Projetos/<pasta>), em `--sandbox workspace-write`
+ * (sem rede). A pasta continua lá depois: é o projeto do cliente. Devolve o resumo, os arquivos e o index.html.
+ */
+export function codexBuildRunner(codex: Command | string, projectsRoot: string, timeoutMs = BUILD_TIMEOUT_MS): Runner {
+  const command = typeof codex === 'string' ? { file: codex, args: [] } : codex;
+  return async (job) => {
+    if (!job.folder || !/^[a-z0-9][a-z0-9-]{2,79}$/.test(job.folder)) return { ok: false, error: 'pasta do projeto inválida' };
+    const dir = join(projectsRoot, job.folder);
+    mkdirSync(dir, { recursive: true });
+    const scratch = mkdtempSync(join(tmpdir(), 'kodexa-'));
+    try {
+      const out = join(scratch, 'resposta.txt');
+      const r = await run(command.file, [...command.args, 'exec', '--sandbox', 'workspace-write', '--skip-git-repo-check', '--ephemeral', '--color', 'never', '--output-last-message', out, '-'], job.prompt, dir, timeoutMs);
+      let text = '';
+      try { text = readFileSync(out, 'utf8'); } catch { /* sem resposta */ }
+      if (!r.ok) return { ok: false, error: r.error };
+      const files = listFiles(dir);
+      let preview: string | undefined;
+      try {
+        const index = join(dir, 'index.html');
+        if (statSync(index).size <= PREVIEW_MAX) preview = readFileSync(index, 'utf8');
+      } catch { /* sem index.html: sem prévia */ }
+      return { ok: true, text: (text.trim() || 'Construção concluída.').slice(0, OUTPUT_MAX), files, ...(preview ? { preview } : {}), folder: dir };
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
     }
   };
 }
@@ -188,15 +237,15 @@ export async function authorize(server: string, name: string, tools: Partial<Rec
 }
 
 /** Uma rodada: pergunta (com espera), roda as tarefas na ordem e confirma cada uma. Devolve quantas rodou. */
-export async function round(server: string, token: string, runners: Partial<Record<Tool, Runner>>, opts: { wait?: boolean; fetcher?: typeof fetch; log?: (line: string) => void } = {}): Promise<number> {
+export async function round(server: string, token: string, runners: Partial<Record<Tool | 'build', Runner>>, opts: { wait?: boolean; fetcher?: typeof fetch; log?: (line: string) => void } = {}): Promise<number> {
   const tools = { codex: !!runners.codex, claude: !!runners.claude };
   const r = await post(server, '/public/connector/poll', { tools, wait: opts.wait ?? true }, token, opts.fetcher);
   if (r.status === 401) throw Object.assign(new Error(r.data.error ?? 'Computador removido da conta.'), { revoked: true });
   if (r.status !== 200) throw new Error('O Kodexa respondeu HTTP ' + r.status + '.');
   const jobs = Array.isArray(r.data.jobs) ? (r.data.jobs as Job[]) : [];
   for (const job of jobs) {
-    const runner = runners[job.tool];
-    opts.log?.(`Tarefa recebida (${job.tool === 'codex' ? 'Codex' : 'Claude Code'})…`);
+    const runner = job.kind === 'build' ? runners.build : runners[job.tool];
+    opts.log?.(job.kind === 'build' ? 'Construção recebida: o Codex vai trabalhar na pasta ' + (job.folder ?? '?') + '…' : `Tarefa recebida (${job.tool === 'codex' ? 'Codex' : 'Claude Code'})…`);
     const result: JobResult = runner ? await runner(job) : { ok: false, error: 'ferramenta não disponível neste computador' };
     await post(server, '/public/connector/ack', { id: job.id, ...result }, token, opts.fetcher);
     opts.log?.(result.ok ? 'Tarefa concluída e enviada ao Kodexa.' : 'Tarefa não concluída: ' + result.error);
@@ -217,9 +266,13 @@ export async function main(argv: string[]): Promise<void> {
 
   const work = join(homedir(), '.kodexa', 'trabalho');
   mkdirSync(work, { recursive: true, mode: 0o700 });
-  const runners: Partial<Record<Tool, Runner>> = {};
+  const runners: Partial<Record<Tool | 'build', Runner>> = {};
   const codex = findCodex();
-  if (codex) runners.codex = codexRunner(codex, work);
+  if (codex) {
+    runners.codex = codexRunner(codex, work);
+    // Construções ficam numa pasta visível do cliente: ~/Kodexa/Projetos/<projeto>.
+    runners.build = codexBuildRunner(codex, join(homedir(), 'Kodexa', 'Projetos'));
+  }
   const claude = argv.includes('--com-claude') ? runnableClaudeBin(process.env) : undefined;
   if (claude) runners.claude = claudeRunner(claude, work);
   log('Codex: ' + (codex ? 'encontrado (' + [codex.file, ...codex.args].join(' ') + ')' : 'não encontrado — instale com "npm install -g @openai/codex" e entre com "codex login"'));

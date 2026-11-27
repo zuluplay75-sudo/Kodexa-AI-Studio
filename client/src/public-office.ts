@@ -7,6 +7,7 @@ import { mountStudioSetup } from './studio/onboarding';
 import type { Member, StudioPrefs } from './studio/prefs';
 import { STAGES, type StudioProject } from '../../shared/studio-project';
 import { PERSONAL_AI_PREFIX } from './ui/provider';
+import { feedItems, memberState, type OfficeActivity } from './studio/office-activity';
 import './public-office.css';
 
 import { assignable, CHOICE_LABEL, CHOICES, connectorCommands, platformOf, DEFAULT_MODEL, GUIDE, initialChoice, LABEL, LOCAL, routeText, stateText, type Choice, type Device, type ProviderId, type Route, type Settings } from './studio/ai-connections';
@@ -78,6 +79,8 @@ async function start(){
   window.addEventListener('pagehide',()=>world.destroy(),{once:true});
   let revision=0;
   let shown:Member[]=[];
+  // Atividade real da conta (etapas rodando, fila do computador, decisão pendente, construção): /public/activity.
+  let live:OfficeActivity|undefined;
   // IA que a etapa do agente usaria na conta (mesma precedência de connectionFor no servidor, sem a equipe de um
   // projeto): a atribuição da etapa, senão a IA padrão da conta. Sem nenhuma: "none" (o chip mostra um traço).
   function aiOf(member:Member){
@@ -92,7 +95,8 @@ async function start(){
     const now=Date.now();
     store.receivePersonalSnapshot({rev:++revision,serverTime:now,accounts:[],meta:{demo:false,version:'',sources:[],startedAt:now},
       rooms:members.length?[{id:'office',name:personal.prefs?.company??'Kodexa',path:'',slot:0,seed:1,createdAt:now}]:[],
-      agents:members.map((m,i)=>({id:m.id,roomId:'office',name:m.name,role:m.role,kind:'main',look:i%2?'m':'f',sessionId:'',account:aiOf(m),status:'idle',seed:1+i,startedAt:now,lastEventAt:now,statusSince:now,recent:[],tasks:[],stats:{toolCalls:0,tokensIn:0,tokensOut:0,subagents:0}}))});
+      agents:members.map((m,i)=>({id:m.id,roomId:'office',name:m.name,role:m.role,kind:'main',look:i%2?'m':'f',sessionId:'',account:aiOf(m),seed:1+i,startedAt:now,tasks:[],stats:{toolCalls:0,tokensIn:0,tokensOut:0,subagents:0},...memberState(m.id,live,now)}))});
+    store.receivePersonalFeed(feedItems(live,members,personal.prefs?.company??'Kodexa'));
   }
   function select(current:string,options:readonly string[],fallback?:string,names:Record<string,string>=LABEL){
     const input=document.createElement('select');
@@ -218,8 +222,54 @@ async function start(){
     if(!usable.length)change.append(el('p','Conecte uma IA em Configurar estúdio para escolher a IA de cada agente.'));
     return box;
   }
+  // Projetos IA › construir no computador do cliente (Kodexa Conector + Codex, escrita só na pasta do projeto).
+  type Build={state:'running'|'done'|'failed';startedAt:number;finishedAt?:number;summary?:string;error?:string;folder?:string;files?:{path:string;size:number}[];hasPreview?:boolean};
+  function personalBuild(project:StudioProject&{build?:Build|null}):HTMLElement{
+    const box=el('section');box.className='kodexa-build';
+    const status=el('p');status.setAttribute('role','status');
+    const b=project.build;
+    const codex=settings.providers.find(x=>x.provider==='codex-local')?.state;
+    const start=(label:string)=>{const go=el('button',label);go.type='button';go.className='kodexa-primary';
+      go.disabled=codex!=='connected';
+      go.onclick=async()=>{
+        if(!confirm('O Codex do seu computador vai criar e editar arquivos SÓ na pasta Kodexa\\Projetos\\'+(b?.folder??'(nome do projeto)')+', sem acesso à internet, seguindo o planejamento aprovado. O uso conta no seu plano ChatGPT. Construir agora?'))return;
+        go.disabled=true;try{project.build=await request<Build>('/public/projects/'+project.id+'/build',{approved:true});box.replaceWith(personalBuild(project));}
+        catch(e){status.textContent=(e as Error).message;go.disabled=false;}};
+      return go;};
+    box.append(el('h4','Construir o projeto'));
+    if(!b){
+      box.append(el('p','O Kodexa Dev constrói o projeto no seu computador, com o Codex da sua conta ChatGPT, numa pasta só deste projeto (Kodexa\\Projetos). Você recebe o resumo, a lista de arquivos e a prévia aqui.'),start('Construir no meu computador'));
+      if(codex!=='connected')box.append(el('p','Abra o Kodexa Conector no seu computador (com o Codex) para construir.'));
+    }else if(b.state==='running'){
+      box.append(el('p','Construindo no seu computador desde '+new Date(b.startedAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'. O Kodexa Dev aparece trabalhando no escritório; deixe o conector aberto.'));
+      // Acompanha até terminar (a lista de projetos só se atualiza sozinha para etapas de planejamento).
+      const timer=setInterval(async()=>{if(!box.isConnected)return clearInterval(timer);try{const fresh=(await request<(StudioProject&{build?:Build|null})[]>('/public/projects')).find(x=>x.id===project.id);if(fresh?.build?.state!=='running'){clearInterval(timer);project.build=fresh?.build;box.replaceWith(personalBuild(project));}}catch{/* tenta de novo */}},4000);
+    }else{
+      if(b.state==='failed')box.append(el('p','A construção não terminou: '+(b.error??'erro desconhecido')));
+      else{
+        box.append(el('p','Pronto: '+(b.files?.length??0)+' arquivos em '+(b.folder??'Kodexa/Projetos')+' no seu computador.'));
+        if(b.hasPreview){const a=el('a','Abrir prévia (index.html)');a.href='/public/projects/'+project.id+'/preview';a.target='_blank';a.rel='noopener noreferrer';a.className='kodexa-ai__link';box.append(a);}
+        else box.append(el('p','Sem prévia no navegador: o projeto não tem um index.html. Veja o README.md na pasta para rodar.'));
+        const summary=el('details');summary.append(el('summary','Resumo do Kodexa Dev'),el('pre',b.summary??''));
+        const files=el('details');files.append(el('summary','Arquivos ('+(b.files?.length??0)+')'),el('pre',(b.files??[]).map(f=>f.path+'  ('+(f.size<1024?f.size+' B':Math.round(f.size/1024)+' KB')+')').join('\n')));
+        box.append(summary,files);
+      }
+      box.append(start(b.state==='failed'?'Tentar de novo':'Construir de novo (continua na mesma pasta)'));
+    }
+    box.append(status);return box;
+  }
   mountStudioSetup(showMembers,personal);
   void confirmComputer();
+  // Como o SSE do original, mas por consulta: a cada 3 s com a aba visível; só redesenha quando algo muda.
+  let lastActivity='';
+  const refreshActivity=async()=>{
+    if(document.visibilityState==='hidden')return;
+    try{const next=await request<OfficeActivity>('/public/activity');const key=JSON.stringify(next);if(key!==lastActivity){lastActivity=key;live=next;showMembers(shown);}}
+    catch{/* sem rede por um instante: tenta de novo na próxima rodada */}
+  };
+  void refreshActivity();
+  setInterval(()=>void refreshActivity(),3000);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void refreshActivity();});
   async function confirmComputer(){
     let id:string|null=(globalThis as {kodexaConnect?:string}).kodexaConnect??null;
     try{id??=sessionStorage.getItem(CONNECT_KEY);sessionStorage.removeItem(CONNECT_KEY);}catch{/* sem storage */}
@@ -245,7 +295,7 @@ async function start(){
   mountProjects({request:async<T>(path:string,body?:unknown)=>{
     if(path==='/api/studio'){settings=await request<Settings>('/public/provider');return {projects:await request('/public/projects'),configured:settings.providers.some(p=>p.state==='connected'),webResearch:false,provider:'personal'} as T;}
     return request<T>(path.replace('/api/studio/projects','/public/projects'),body);
-  },team:personalTeam});
+  },team:personalTeam,build:personalBuild});
 }
 void start().catch(report);
 
