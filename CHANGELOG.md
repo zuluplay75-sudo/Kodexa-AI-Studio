@@ -10,6 +10,13 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+### Segurança
+
+- **A página do escritório agora tem Content-Security-Policy.** Só os scripts do próprio Habblaud rodam (sem
+  scripts inline e sem `eval`), e a página não pode ser embutida em outro site. É uma proteção extra: se um texto
+  malicioso vindo de um transcript algum dia escapar na tela, ele não vira script com acesso ao terminal e às
+  respostas de permissão.
+
 ## [1.0.3] - 2026-10-16
 
 ### Corrigido

@@ -405,10 +405,13 @@ describe('BuildingUplink: conexão e remessas', () => {
     const h = await start({ tokensVisible: false });
     await waitFor(() => h.world.ws.uplinks.length === 1, 'primeira');
     expect(h.world.ws.uplinks[0].uplink.tokens).toBeUndefined();
-    h.store.setTheme('christmas');
+    // Um tema diferente do que foi na primeira remessa: o automático segue o calendário (Natal em nov./dez.,
+    // Halloween em out.), então um tema fixo coincidiria com ele em parte do ano e não haveria o que mandar de novo.
+    const next = h.world.ws.uplinks[0].uplink.theme === 'christmas' ? 'halloween' : 'christmas';
+    h.store.setTheme(next);
     h.uplink.themeChanged();
     await waitFor(() => h.world.ws.uplinks.length === 2, 'tema');
-    expect(h.world.ws.uplinks[1].uplink.theme).toBe('christmas');
+    expect(h.world.ws.uplinks[1].uplink.theme).toBe(next);
   });
 
   it('welcome.building: andares e agentes do mundo até a primeira remessa daqui', async () => {

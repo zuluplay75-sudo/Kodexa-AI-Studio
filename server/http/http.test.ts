@@ -242,7 +242,13 @@ describe('API HTTP', () => {
     expect(await page.text()).toContain('<title>Habblaud</title>');
     expect(page.headers.get('cache-control')).toBe(REVALIDATE);
     expect(page.headers.get('x-frame-options')).toBe('DENY');
+    const csp = page.headers.get('content-security-policy') ?? '';
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).not.toMatch(/script-src[^;]*'unsafe-(inline|eval)'/);
+    expect(csp).toContain("object-src 'none'");
+    expect(csp).toContain("frame-ancestors 'none'");
     const bundle = await fetch(`${env.base}/bundle/main-abc12345.js`);
+    expect(bundle.headers.get('content-security-policy')).toBeNull();
     expect(bundle.headers.get('cache-control')).toBe(IMMUTABLE);
     expect(bundle.headers.get('content-type')).toMatch(/javascript/);
     // client/public: nome fixo, pode mudar a cada build.

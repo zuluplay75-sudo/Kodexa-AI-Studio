@@ -39,6 +39,30 @@ export const HASHED_DIR = '/bundle/';
 export const IMMUTABLE = 'public, max-age=31536000, immutable';
 export const REVALIDATE = 'no-cache';
 
+/**
+ * CSP das páginas HTML (index.html): só scripts do próprio Habblaud, sem inline e sem eval. Defesa em profundidade
+ * contra XSS — a página controla o terminal interativo e as respostas de permissão, então um texto malicioso vindo de
+ * um transcript não pode virar script. Estilos inline continuam (o index.html e a interface usam); imagens `data:` e
+ * `blob:` são os avatares e as prévias de anexos; tudo o mais (API, SSE, World) passa pela mesma origem. O modo dev
+ * (Vite) não passa por aqui.
+ */
+export const PAGE_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "media-src 'self' blob:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "frame-src 'self'",
+  "worker-src 'self'",
+  "manifest-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join('; ');
+
 function fileStat(p: string): Stats | undefined {
   try {
     const st = statSync(p);
@@ -85,6 +109,7 @@ export function createStaticHandler(distDir: string): (req: IncomingMessage, res
       'X-Frame-Options': 'DENY',
       'Referrer-Policy': 'no-referrer',
     };
+    if (extname(file).toLowerCase() === '.html') headers['Content-Security-Policy'] = PAGE_CSP;
     if (isNotModified(req, etag, st.mtimeMs)) {
       res.writeHead(304, headers);
       return void res.end();
