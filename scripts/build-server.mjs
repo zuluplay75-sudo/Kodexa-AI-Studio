@@ -20,9 +20,11 @@ await build({
   bundle: true,
   platform: 'browser',
   format: 'iife',
+  loader: { '.woff2': 'dataurl', '.woff': 'dataurl' },
   minify: true,
 });
 
 const info = writeBuildInfo('dist/build.json');
 console.log(`  dist/build.json  ${info.commit === 'unknown' ? 'unknown' : info.commit.slice(0, 12)}${info.dirty ? ' (dirty)' : ''}`);
+
 

@@ -1,4 +1,5 @@
 import { OfficeStore } from './net/store';
+import { createUI } from './ui';
 import { createWorld } from './world';
 import { mountProjects } from './studio/projects';
 import { mountStudioSetup } from './studio/onboarding';
@@ -29,11 +30,33 @@ async function start(){
   logout.onclick=()=>void request('/public/logout',{}).then(()=>location.replace('https://kodexa.ia.br/login')).catch(report);
   const store=new OfficeStore();
   const world=createWorld(canvas,store);
+  document.getElementById('brand')!.hidden=true;
+  const ui=document.createElement('div');
+  ui.id='ui';
+  ui.dataset.personalOffice='true';
+  document.body.append(ui);
+  createUI(ui,store,world);
+  const bar=ui.querySelector<HTMLElement>('.ui-topbar__right')!;
+  bar.append(logout);
+  const connected=document.createElement('div');
+  connected.className='personal-connections';
+  connected.setAttribute('aria-label','IAs conectadas nesta conta');
+  bar.before(connected);
+  function renderConnections(){
+    connected.replaceChildren(...settings.connections.map(({provider,model})=>{
+      const badge=document.createElement('span');
+      badge.textContent=labels[provider];
+      badge.title=model;
+      return badge;
+    }));
+    connected.hidden=!settings.connections.length;
+  }
+  renderConnections();
   window.addEventListener('pagehide',()=>world.destroy(),{once:true});
   let revision=0;
   function showMembers(members:Member[]){
     const now=Date.now();
-    store.pushReplay({rev:++revision,serverTime:now,accounts:[],meta:{demo:false,version:'',sources:[],startedAt:now},
+    store.receivePersonalSnapshot({rev:++revision,serverTime:now,accounts:[],meta:{demo:false,version:'',sources:[],startedAt:now},
       rooms:members.length?[{id:'office',name:personal.prefs?.company??'Kodexa',path:'',slot:0,seed:1,createdAt:now}]:[],
       agents:members.map((m,i)=>({id:m.id,roomId:'office',name:m.name,role:m.role,kind:'main',look:i%2?'m':'f',sessionId:'',account:'',status:'idle',seed:1+i,startedAt:now,lastEventAt:now,statusSince:now,recent:[],tasks:[],stats:{toolCalls:0,tokensIn:0,tokensOut:0,subagents:0}}))});
   }
@@ -55,7 +78,7 @@ async function start(){
     for(const disconnect of [false,true]){
       const b=document.createElement('button');b.type='button';b.textContent=disconnect?'Desconectar':'Conectar IA';
       b.onclick=async()=>{b.disabled=true;try{
-        settings=await request('/public/provider',disconnect?{provider:vendor.value,disconnect:true}:{provider:vendor.value,model:model.value.trim(),key:key.value.trim()});refresh();
+        settings=await request('/public/provider',disconnect?{provider:vendor.value,disconnect:true}:{provider:vendor.value,model:model.value.trim(),key:key.value.trim()});renderConnections();refresh();
       }catch(e){feedback.textContent=(e as Error).message;}finally{b.disabled=false;}};
       box.append(b);
     }
@@ -86,3 +109,4 @@ async function start(){
   }});
 }
 void start().catch(report);
+

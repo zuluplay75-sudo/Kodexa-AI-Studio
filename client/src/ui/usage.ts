@@ -223,7 +223,7 @@ export class UsageCards {
     // A largura da janela mudou: refaz a conta de cabem-ou-não (ver fit()).
     if (typeof ResizeObserver === 'function') new ResizeObserver(() => this.fit()).observe(ctx.root);
     // Não afeta replay/mock; a API autenticada retorna somente contadores e status, nunca chaves.
-    if (!new URLSearchParams(location.search).has('mock')) {
+    if (!ctx.root.dataset.personalOffice && !new URLSearchParams(location.search).has('mock')) {
       void this.refreshStudioUsage();
       setInterval(()=>{if(document.visibilityState!=='hidden')void this.refreshStudioUsage();},15000);
       document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void this.refreshStudioUsage();});
@@ -497,3 +497,4 @@ export class UsageCards {
     setHidden(r.tipSetup, live);
   }
 }
+

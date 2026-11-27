@@ -375,6 +375,11 @@ export class OfficeStore {
     this.emit('connection', state);
   }
 
+  receivePersonalSnapshot(snap: OfficeSnapshot): void {
+    this.setConnection('open');
+    this.applySnapshot(snap);
+  }
+
   private applySnapshot(snap: OfficeSnapshot): void {
     const cur = this.replay ? this.live?.snap : this.snapshot;
     if (cur && snap.rev < cur.rev && snap.meta.startedAt === cur.meta.startedAt) return;
@@ -530,3 +535,4 @@ export class OfficeStore {
     }, 250);
   }
 }
+

@@ -127,7 +127,7 @@ export function createPublicStudio(options: {
         url.pathname === '/public/office.css' ? ['text/css', readFileSync(new URL('./public-office.css', import.meta.url), 'utf8')] :
         url.pathname === '/public/office.js' ? ['text/javascript', readFileSync(new URL('./public-office.js', import.meta.url), 'utf8')] : undefined;
       if (resource) {
-        res.setHeader('Content-Security-Policy', "default-src 'none'; connect-src 'self'; script-src 'self'; style-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'");
+        res.setHeader('Content-Security-Policy', "default-src 'none'; connect-src 'self'; font-src data:; img-src 'self' data:; script-src 'self'; style-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'");
         res.writeHead(200, { 'Content-Type': resource[0] + '; charset=utf-8' });
         res.end(resource[1]);
         return;
@@ -305,4 +305,5 @@ export function createPublicStudio(options: {
     return json(res, 201, studio.create({ brief: (body as { brief?: unknown } | null)?.brief, research: false }));
   }
 }
+
 
