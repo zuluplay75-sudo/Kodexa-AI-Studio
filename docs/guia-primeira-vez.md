@@ -10,13 +10,9 @@ Leva uns 10 minutos na primeira vez.
 
 - Um computador com **Windows 10 ou 11** (no Mac/Linux, veja o fim do guia).
 - Uma conta do **ChatGPT** (Plus ou Pro) e uma conta **Google** (para entrar no Kodexa).
-- O **Node.js** (versão LTS): baixe em https://nodejs.org/pt/download e instale com as opções padrão.
-- O **Codex** com a sua conta do ChatGPT. Abra o menu Iniciar, digite `cmd`, abra o **Prompt de Comando** e rode:
-  ```
-  npm install -g @openai/codex
-  codex login
-  ```
-  O `codex login` abre o navegador: entre com a sua conta do ChatGPT e autorize. Pode fechar o Prompt de Comando.
+- Uns **800 MB livres** no disco: na primeira vez, o conector baixa (cerca de 200 MB) e instala o Codex oficial da OpenAI.
+
+Não precisa instalar o Node.js nem usar comandos: o Kodexa Conector já traz o que precisa.
 
 ## 1. Entrar no Kodexa
 
@@ -25,14 +21,17 @@ Leva uns 10 minutos na primeira vez.
 
 ## 2. Conectar o seu computador (Kodexa Conector)
 
-1. Baixe o **KodexaConector.exe** e dê dois cliques nele.
+1. Baixe o **KodexaConector.zip**, clique com o botão direito › **Extrair tudo** e abra o **KodexaConector.exe**.
 2. Se aparecer **"O Windows protegeu o computador"**, clique em **Mais informações** › **Executar assim mesmo**.
    (O aviso some quando o conector estiver na Microsoft Store.)
-3. A janela preta do conector mostra **"Codex: encontrado"** e um **código de 4 letras**, e abre o navegador em
-   **"Autorizar este computador?"**. Se o navegador não abrir, copie o endereço que aparece na janela.
-4. Entre com Google, se pedir. Confira se o **código é o mesmo** da janela do conector e clique em
+3. Na primeira vez, a janela pergunta se pode **instalar o Codex oficial da OpenAI**. Aperte **Enter** (sim). Ele baixa
+   cerca de 200 MB, confere a assinatura do arquivo e instala numa pasta só do Kodexa.
+4. Em seguida abre o navegador para você **entrar na sua conta do ChatGPT** (login do Codex). Entre e volte à janela.
+5. A janela mostra um **código de 4 letras** e abre o navegador em **"Autorizar este computador?"**. Se o navegador não
+   abrir, copie o endereço que aparece na janela.
+6. Entre com Google, se pedir. Confira se o **código é o mesmo** da janela do conector e clique em
    **Autorizar este computador**.
-5. A janela do conector mostra **"Computador conectado à sua conta do Kodexa"**.
+7. A janela do conector mostra **"Computador conectado à sua conta do Kodexa"**.
 
 **Deixe a janela do conector aberta** (pode minimizar). É por ela que os agentes trabalham. Se fechar, é só abrir o
 `KodexaConector.exe` de novo: ele lembra do pareamento e não pede autorização outra vez.
@@ -83,10 +82,10 @@ conector aberto (e com internet).
 
 | O que aparece | O que fazer |
 | --- | --- |
-| Conector: "Codex: não encontrado" | Rode `npm install -g @openai/codex` e `codex login` no Prompt de Comando e abra o conector de novo. |
+| Conector: "Codex: não encontrado" | Abra o conector de novo e aperte Enter quando ele perguntar se pode instalar o Codex. |
 | Conector: "Sem conexão com o Kodexa" | Confira a internet. Se persistir, o site pode estar fora do ar: tente mais tarde. |
 | Projeto: "o computador com o Kodexa Conector está desligado" | Abra o `KodexaConector.exe` e espere aparecer "Conectado". |
-| Conector: "Tarefa não concluída: Not logged in" | Rode `codex login` de novo. |
+| Conector: "Tarefa não concluída: Not logged in" | Feche e abra o conector: ele abre o login do ChatGPT de novo. |
 | Quero desconectar este computador | Configurar estúdio › Seus computadores › **Remover**. |
 | Trocar a conta ou o computador | No Prompt de Comando, na pasta do conector: `KodexaConector.exe --esquecer`, e abra de novo. |
 

@@ -24,6 +24,8 @@ import { pathToFileURL } from 'node:url';
 import { findCodexBin } from '../server/messages/codex';
 import { findExecutable, runnableClaudeBin } from '../server/claude-bin';
 import { createOpener, type Opener } from '../server/spawn/spawn';
+import { installCodex, installedCodex } from './kodexa-codex-download';
+import { spawn } from 'node:child_process';
 
 export const VERSION = '1.0.0';
 
@@ -68,6 +70,9 @@ export function findCodex(env: NodeJS.ProcessEnv = process.env, platform: NodeJS
   if (explicit) return exists(explicit) ? { file: explicit, args: [] } : undefined;
   const native = findCodexBin(env);
   if (native) return { file: native, args: [] };
+  // O Codex que o próprio conector instalou (~/.kodexa/codex), quando a pessoa não tinha.
+  const managed = installedCodex();
+  if (managed && exists(managed)) return { file: managed, args: [] };
   if (platform !== 'win32') return undefined;
   const dirs = (env.PATH ?? env.Path ?? '').split(delimiter).filter((d) => d && isAbsolute(d));
   if (env.APPDATA) dirs.push(join(env.APPDATA, 'npm'));
@@ -253,6 +258,27 @@ export async function round(server: string, token: string, runners: Partial<Reco
   return jobs.length;
 }
 
+/** Pergunta sim/não no terminal (Enter = sim). Sem terminal (atalho, serviço): não pergunta e devolve `fallback`. */
+function confirm(question: string, fallback = false): Promise<boolean> {
+  if (!process.stdin.isTTY) return Promise.resolve(fallback);
+  process.stdout.write('[kodexa] ' + question + ' [S/n] ');
+  return new Promise((done) => process.stdin.once('data', (d) => { process.stdin.pause(); done(!/^\s*n/i.test(String(d))); }));
+}
+
+/** O Codex está logado numa conta? (`codex login status` sai com 0 só com login.) */
+function codexLoggedIn(codex: Command): Promise<boolean> {
+  return new Promise((done) => execFile(codex.file, [...codex.args, 'login', 'status'], { timeout: 30_000, windowsHide: true }, (err) => done(!err)));
+}
+
+/** `codex login` na mesma janela: o Codex abre o navegador para a pessoa entrar na conta do ChatGPT. */
+function codexLogin(codex: Command): Promise<boolean> {
+  return new Promise((done) => {
+    const child = spawn(codex.file, [...codex.args, 'login'], { stdio: 'inherit', windowsHide: false });
+    child.on('exit', (code) => done(code === 0));
+    child.on('error', () => done(false));
+  });
+}
+
 export async function main(argv: string[]): Promise<void> {
   const arg = (name: string) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : undefined; };
   const log = (line: string) => console.log('[kodexa] ' + line);
@@ -267,7 +293,24 @@ export async function main(argv: string[]): Promise<void> {
   const work = join(homedir(), '.kodexa', 'trabalho');
   mkdirSync(work, { recursive: true, mode: 0o700 });
   const runners: Partial<Record<Tool | 'build', Runner>> = {};
-  const codex = findCodex();
+  let codex = findCodex();
+  if (!codex && (argv.includes('--instalar-codex') || await confirm('O Codex não está instalado neste computador. Instalar agora o Codex oficial da OpenAI (download de cerca de 200 MB, uma vez só)?'))) {
+    try {
+      await installCodex({ log });
+      codex = findCodex();
+    } catch (error) {
+      log('Não foi possível instalar o Codex: ' + (error as Error).message);
+    }
+  }
+  if (argv.includes('--instalar-codex')) {
+    if (!codex) throw new Error('O Codex não foi instalado.');
+    return log('Codex pronto: ' + [codex.file, ...codex.args].join(' '));
+  }
+  // Login na conta do ChatGPT: é ela que paga as tarefas (pelo plano). Sem login, o Codex não trabalha.
+  if (codex && !(await codexLoggedIn(codex))) {
+    log('Entre na sua conta do ChatGPT na janela do navegador que vai abrir (login do Codex).');
+    if (!(await codexLogin(codex))) log('O login do Codex não foi concluído. Rode o conector de novo para tentar outra vez.');
+  }
   if (codex) {
     runners.codex = codexRunner(codex, work);
     // Construções ficam numa pasta visível do cliente: ~/Kodexa/Projetos/<projeto>.
@@ -275,9 +318,9 @@ export async function main(argv: string[]): Promise<void> {
   }
   const claude = argv.includes('--com-claude') ? runnableClaudeBin(process.env) : undefined;
   if (claude) runners.claude = claudeRunner(claude, work);
-  log('Codex: ' + (codex ? 'encontrado (' + [codex.file, ...codex.args].join(' ') + ')' : 'não encontrado — instale com "npm install -g @openai/codex" e entre com "codex login"'));
+  log('Codex: ' + (codex ? 'encontrado (' + [codex.file, ...codex.args].join(' ') + ')' : 'não encontrado'));
   log('Claude Code: ' + (claude ? 'encontrado (' + claude + ')' : argv.includes('--com-claude') ? 'não encontrado' : 'desligado (use --com-claude)'));
-  if (!codex && !claude) throw new Error('Nenhuma ferramenta disponível neste computador. Instale o Codex ("npm install -g @openai/codex"), entre com "codex login" e abra o conector de novo.');
+  if (!codex && !claude) throw new Error('Nenhuma ferramenta disponível neste computador. Abra o conector de novo e aceite instalar o Codex (ou instale com "npm install -g @openai/codex").');
   if (code || !config || argv.includes('--autorizar')) {
     const server = (arg('--servidor') ?? config?.server ?? DEFAULT_SERVER).replace(/\/+$/, '');
     if (!/^https:\/\//.test(server) && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(server)) throw new Error('Use um endereço https:// para o servidor.');

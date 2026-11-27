@@ -7,6 +7,7 @@ main(process.argv.slice(2)).catch((error: Error) => {
   // No duplo clique, a janela fecharia na hora: espera o Enter para a pessoa conseguir ler o motivo.
   if (process.stdin.isTTY) {
     console.error('[kodexa] Pressione Enter para fechar.');
+    process.stdin.resume();
     process.stdin.once('data', () => process.exit(1));
   } else process.exit(1);
 });

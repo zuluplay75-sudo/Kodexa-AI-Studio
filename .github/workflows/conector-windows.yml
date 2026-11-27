@@ -21,6 +21,7 @@ on:
     branches: [feat/kodexa-public-studio]
     paths:
       - 'scripts/kodexa-connector*.ts'
+      - 'scripts/kodexa-codex-download.ts'
       - 'scripts/build-connector-exe.mjs'
       - 'packaging/msix/**'
       - '.github/workflows/conector-windows.yml'
@@ -61,6 +62,20 @@ jobs:
           $out = & .\dist\connector\KodexaConector.exe --versao 2>&1 | Out-String
           Write-Host $out
           if ($out -notmatch 'Kodexa Conector \d+\.\d+\.\d+ \(execut') { throw 'O .exe não se reconheceu como executável único.' }
+          $global:LASTEXITCODE = 0
+
+      - name: Instalar o Codex pelo conector (sem Node nem npm, download real do registro)
+        shell: pwsh
+        run: |
+          $out = & .\dist\connector\KodexaConector.exe --instalar-codex 2>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch 'Assinatura conferida') { throw 'O conector não conferiu a assinatura do Codex.' }
+          if ($out -notmatch 'Codex pronto') { throw 'O conector não instalou o Codex.' }
+          $exe = Get-ChildItem (Join-Path $env:USERPROFILE '.kodexa\codex') -Recurse -Filter codex.exe | Select-Object -First 1
+          & $exe.FullName --version
+          if ($LASTEXITCODE -ne 0) { throw 'O codex.exe instalado pelo conector não rodou.' }
+          # Remove para o passo seguinte testar a busca do Codex instalado pelo npm.
+          Remove-Item -Recurse -Force (Join-Path $env:USERPROFILE '.kodexa\codex')
           $global:LASTEXITCODE = 0
 
       - name: Testar a busca do Codex instalado pelo npm

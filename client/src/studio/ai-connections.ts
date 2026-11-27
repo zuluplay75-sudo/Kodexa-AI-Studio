@@ -43,8 +43,8 @@ export const DEFAULT_MODEL: Record<'openai' | 'anthropic' | 'gemini', string> = 
 export const GUIDE: Record<Choice, string> = {
   'codex-local':
     'Os agentes usam o Codex do seu computador, logado na sua conta do ChatGPT: o uso conta no seu plano, sem chave e sem cobrança de API. ' +
-    'Instale o Codex (npm install -g @openai/codex), entre com "codex login" e pareie o computador com o código abaixo. ' +
-    'As tarefas rodam no seu computador, numa pasta só do Kodexa e em modo somente leitura; ele precisa estar ligado com o conector aberto.',
+    'Baixe e abra o Kodexa Conector: ele instala o Codex oficial se faltar, abre o login do ChatGPT e pede para você autorizar este computador. ' +
+    'As tarefas rodam no seu computador, numa pasta só do Kodexa; ele precisa estar ligado com o conector aberto.',
   'claude-local':
     'Os agentes usam o Claude Code do seu computador, logado na sua conta Claude: o uso conta no seu plano, sem chave de API. ' +
     'Instale e entre no Claude Code, pareie o computador com o código abaixo e abra o conector com --com-claude. ' +
