@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { nextPlanningStages, STAGES, type StudioRole } from '../../shared/studio-project';
 import { parseConnection, plan, type Connection } from './planning';
@@ -27,8 +28,16 @@ type Preferences = {
 function isProvider(value: unknown): value is Provider {
   return value === 'openai' || value === 'anthropic' || value === 'gemini';
 }
-function connectionFor(prefs: Preferences | undefined, role: StudioRole) {
-  const provider = prefs?.assignments.get(role) ?? prefs?.defaultProvider;
+type Team = Partial<Record<StudioRole | 'default', Provider>>;
+function readTeam(path: string): Team {
+  try { return JSON.parse(readFileSync(path, 'utf8')); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    throw error;
+  }
+}
+function connectionFor(prefs: Preferences | undefined, role: StudioRole, team: Team) {
+  const provider = team[role] ?? team.default ?? prefs?.assignments.get(role) ?? prefs?.defaultProvider;
   return provider && prefs?.connections.get(provider);
 }
 
@@ -167,7 +176,7 @@ export function createPublicStudio(options: {
     }
 
     // The public process has a positive allowlist and never calls owner routes.
-    const action = /^\/public\/projects\/([a-f0-9-]{36})\/(next|approve)$/.exec(url.pathname);
+    const action = /^\/public\/projects\/([a-f0-9-]{36})\/(next|approve|team)$/.exec(url.pathname);
     if (!action && !['/public/projects', '/public/logout', '/public/provider'].includes(url.pathname)) {
       return json(res, 404, { error: 'Página não encontrada.' });
     }
@@ -231,6 +240,7 @@ export function createPublicStudio(options: {
     if (action ? method !== 'POST' : url.pathname !== '/public/projects' || (method !== 'GET' && method !== 'POST')) {
       return json(res, 405, { error: 'Método não permitido.' });
     }
+    const teamPath = (id: string) => join(options.dir, session.user, id + '.team.json');
     let studio = studios.get(session.user);
     if (!studio) {
       if (studios.size >= 1024) return json(res, 503, { error: 'Capacidade do estúdio atingida.' });
@@ -238,22 +248,38 @@ export function createPublicStudio(options: {
         dir: join(options.dir, session.user),
         env: {},
         run: (project, stage) => {
-          const connection = connectionFor(preferences.get(session.user), stage[0]);
+          const connection = connectionFor(preferences.get(session.user), stage[0], readTeam(teamPath(project.id)));
           if (!connection) throw new ProjectError(409, 'Conecte sua IA para continuar.');
           return plan(connection, project, stage, options.fetcher);
         },
       });
       studios.set(session.user, studio);
     }
-    if (method === 'GET') return json(res, 200, studio.info().projects);
+    if (method === 'GET') return json(res, 200, studio.info().projects.map(project => ({ ...project, team: readTeam(teamPath(project.id)) })));
     const body = await readJson(req, 16 * 1024);
     if (sessions.get(sessionId) !== session || session.expires <= clock()) return json(res, 401, { error: 'Entre com Google.' });
+    if (action?.[2] === 'team') {
+      const project = studio.info().projects.find(p => p.id === action[1]);
+      if (!project) throw new ProjectError(404, 'Projeto não encontrado.');
+      if (project.state === 'running') throw new ProjectError(409, 'Aguarde a etapa terminar.');
+      const change = body as { role?: unknown; provider?: unknown } | null;
+      const role = change?.role === 'default' ? 'default' : STAGES.find(([id]) => id === change?.role)?.[0];
+      if (!role) throw new ProjectError(400, 'Agente inválido.');
+      const path = teamPath(project.id);
+      const team = readTeam(path);
+      if (change?.provider === null) delete team[role];
+      else if (isProvider(change?.provider) && preferences.get(session.user)?.connections.has(change.provider)) team[role] = change.provider;
+      else throw new ProjectError(400, 'Conecte essa IA em Minha IA para projetos.');
+      writeFileSync(path + '.tmp', JSON.stringify(team), { mode: 0o600 });
+      renameSync(path + '.tmp', path);
+      return json(res, 200, team);
+    }
     if (action?.[2] === 'approve') return json(res, 200, studio.approve(action[1], (body as { decision?: unknown } | null)?.decision));
     if (action?.[2] === 'next') {
       const project = studio.info().projects.find(candidate => candidate.id === action[1]);
       if (!project) throw new ProjectError(404, 'Projeto não encontrado.');
       const stage = nextPlanningStages(project)[0];
-      if (stage && !connectionFor(preferences.get(session.user), stage[0])) {
+      if (stage && !connectionFor(preferences.get(session.user), stage[0], readTeam(teamPath(project.id)))) {
         throw new ProjectError(409, 'Conecte e atribua uma IA para executar esta etapa.');
       }
       return json(res, 202, studio.launch(action[1]));
