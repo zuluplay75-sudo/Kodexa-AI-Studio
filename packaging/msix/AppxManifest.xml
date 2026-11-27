@@ -47,7 +47,7 @@
         <desktop:Extension Category="windows.startupTask" Executable="KodexaConector.exe" EntryPoint="Windows.FullTrustApplication">
           <desktop:StartupTask TaskId="KodexaConectorInicio" Enabled="true" DisplayName="Kodexa Conector" />
         </desktop:Extension>
-        <!-- "kodexa-conector" no terminal (para --versao, --autorizar e --esquecer). -->
+        <!-- Comando "kodexa-conector" no terminal (opções de versão, autorizar de novo e esquecer o pareamento). -->
         <uap3:Extension Category="windows.appExecutionAlias" Executable="KodexaConector.exe" EntryPoint="Windows.FullTrustApplication">
           <uap3:AppExecutionAlias>
             <desktop:ExecutionAlias Alias="kodexa-conector.exe" />
