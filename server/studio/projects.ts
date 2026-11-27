@@ -191,7 +191,7 @@ export class ProjectStudio {
           // Only expose known, sanitized router diagnostics; never raw API bodies or credentials.
           const h=handoffs.get(stage[0])!;
           const message=e instanceof Error?e.message:'';
-          const safe=/^(Gemini HTTP \d{3}|Provedor não configurado\.|Limite diário do Kodexa atingido\.|Não respondeu ou excedeu o tempo limite\.)$/.test(message)?message:'Falha na etapa; confira a conexão e os limites do provedor.';
+          const safe=e instanceof PlanningApiError ? e.message : /^(Gemini HTTP \d{3}|Provedor não configurado\.|Limite diário do Kodexa atingido\.|Não respondeu ou excedeu o tempo limite\.)$/.test(message)?message:'Falha na etapa; confira a conexão e os limites do provedor.';
           const provider=h.provider==='gemini'?'Gemini':h.provider==='claude-cli'?'Claude':h.provider==='codex-cli'?'Codex':h.provider==='openai'?'OpenAI':h.provider==='anthropic'?'Anthropic':'Provedor padrão';
           failures.set(stage[0],stage[1]+' ('+provider+'): '+safe);
           p.runningRoles=p.runningRoles!.filter(r=>r!==stage[0]);
@@ -289,6 +289,8 @@ export class ProjectStudio {
 }
 
 /** Planning response adapter shared by the owner and isolated public studio. */
+class PlanningApiError extends Error {}
+
 export async function callPlanningApi(
   c: {provider:string; model:string; key?:string},
   system:string,input:string,web:boolean,fetcher:typeof fetch=fetch,
@@ -300,7 +302,18 @@ export async function callPlanningApi(
     headers:anthropic?{'Content-Type':'application/json','x-api-key':c.key,'anthropic-version':'2023-06-01'}:{'Content-Type':'application/json',Authorization:'Bearer '+c.key},
     body:JSON.stringify(anthropic?{model:c.model,max_tokens:3000,system,messages:[{role:'user',content:input}]}:{model:c.model,instructions:system,input,max_output_tokens:4000,store:false,...(web?{tools:[{type:'web_search'}],tool_choice:'required'}:{})})
   });
-  if(!response.ok) throw new Error('Provider error');
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    const code = body?.error?.code;
+    let reason = 'Falha na solicitação ao provedor.';
+    if (code === 'insufficient_quota') reason = 'Cota da API esgotada. Confira os créditos e o limite de uso no provedor.';
+    else if (response.status === 401) reason = 'Chave recusada. Configure novamente a chave desta IA.';
+    else if (response.status === 403) reason = 'Acesso recusado. Confira as permissões da chave e do projeto no provedor.';
+    else if (code === 'model_not_found' || response.status === 404) reason = 'Recurso indisponível. Confira o modelo e o acesso da sua conta.';
+    else if (response.status === 429) reason = 'Limite de uso atingido. Confira os limites do provedor antes de tentar novamente.';
+    else if (response.status >= 500) reason = 'O provedor apresentou uma falha temporária. Tente novamente em instantes.';
+    throw new PlanningApiError(reason + ' (HTTP ' + response.status + ')');
+  }
   const data=await response.json() as any;
   // A partial report must not unlock the next role or be recorded as completed.
   if(anthropic ? data?.stop_reason!=='end_turn' : data?.status!=='completed') throw new Error('Provider incomplete');
