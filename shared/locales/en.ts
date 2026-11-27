@@ -3277,4 +3277,5 @@ export const EN: Readonly<Record<string, string>> = {
   "Configurar estúdio": "Set up studio",
   "IA conectada: {0}": "Connected AI: {0}",
   "Nenhuma IA conectada": "No AI connected",
+  "Reconecte {0} em Configurar estúdio": "Reconnect {0} in Set up studio",
 };

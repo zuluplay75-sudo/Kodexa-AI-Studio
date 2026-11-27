@@ -3278,4 +3278,5 @@ export const ES: Readonly<Record<string, string>> = {
   "Configurar estúdio": "Configurar estudio",
   "IA conectada: {0}": "IA conectada: {0}",
   "Nenhuma IA conectada": "Ninguna IA conectada",
+  "Reconecte {0} em Configurar estúdio": "Vuelve a conectar {0} en Configurar estudio",
 };

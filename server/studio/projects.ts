@@ -192,7 +192,7 @@ export class ProjectStudio {
           const h=handoffs.get(stage[0])!;
           const message=e instanceof Error?e.message:'';
           const safe=e instanceof PlanningApiError ? e.message : /^(Gemini HTTP \d{3}|Provedor não configurado\.|Limite diário do Kodexa atingido\.|Não respondeu ou excedeu o tempo limite\.)$/.test(message)?message:'Falha na etapa; confira a conexão e os limites do provedor.';
-          const provider=h.provider==='gemini'?'Gemini':h.provider==='claude-cli'?'Claude':h.provider==='codex-cli'?'Codex':h.provider==='openai'?'OpenAI':h.provider==='anthropic'?'Anthropic':'Provedor padrão';
+          const provider=e instanceof PlanningApiError&&e.provider?e.provider:h.provider==='gemini'?'Gemini':h.provider==='claude-cli'?'Claude':h.provider==='codex-cli'?'Codex':h.provider==='openai'?'OpenAI':h.provider==='anthropic'?'Anthropic':'Provedor padrão';
           failures.set(stage[0],stage[1]+' ('+provider+'): '+safe);
           p.runningRoles=p.runningRoles!.filter(r=>r!==stage[0]);
           failed.push(stage[0]);p.failedRoles=[...failed];handoffs.get(stage[0])!.state='failed';
@@ -289,7 +289,10 @@ export class ProjectStudio {
 }
 
 /** Planning response adapter shared by the owner and isolated public studio. */
-class PlanningApiError extends Error {}
+/** Falha conhecida e já sanitizada do provedor; `provider` = nome exibido da IA que falhou (quando quem chamou sabe). */
+export class PlanningApiError extends Error {
+  constructor(message: string, readonly provider?: string) { super(message); }
+}
 
 export async function callPlanningApi(
   c: {provider:string; model:string; key?:string},

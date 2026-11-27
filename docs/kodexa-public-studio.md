@@ -1,6 +1,13 @@
 # Kodexa público
 
-O serviço público tem processo próprio e oferece cadastro com Google, projetos privados e planejamento com as chaves de IA de cada conta. Os projetos são persistidos no diretório público. As conexões e atribuições de IA ficam em memória, expiram com a última sessão da conta e precisam ser configuradas de novo após reiniciar o processo.
+O serviço público tem processo próprio e oferece cadastro com Google, projetos privados e planejamento com as IAs de cada conta. Os projetos são persistidos no diretório público.
+
+As IAs de cada conta ficam em duas partes, sempre isoladas por usuário (`<diretório>/<usuário>/`):
+
+- **Escolhas** (`ai-routing.json`): IA padrão da conta e IA de cada agente. Não têm segredo e sobrevivem a reinícios e à expiração de uma autorização; o painel pede reconexão em vez de esquecer a escolha. A escolha por projeto fica em `<projeto>.team.json`.
+- **Credenciais** (`ai-credentials.enc`): chaves de API e tokens do ChatGPT. Com `KODEXA_CREDENTIALS_KEY`, ficam cifradas (AES-256-GCM, amarradas à conta) e sobrevivem a reinícios. Sem ela, ficam só em memória: somem ao sair da última sessão ou ao reiniciar. Nunca vão ao navegador, a logs, ao Git nem ao JSON dos projetos.
+
+Precedência da IA de uma etapa: escolha do agente no projeto → IA padrão do projeto → atribuição do agente na conta → IA padrão da conta. Uma IA desconectada, expirada ou sem cota interrompe só a etapa afetada (resultados anteriores ficam), sem trocar de conta, provedor ou cobrança; reconectar retoma.
 
 ## Validar antes de abrir o acesso
 
@@ -15,6 +22,12 @@ O serviço público tem processo próprio e oferece cadastro com Google, projeto
 | `KODEXA_PUBLIC_DATA_DIR` | Caminho absoluto do armazenamento público |
 | `KODEXA_GOOGLE_CLIENT_ID` | Identificador do cliente OAuth web |
 | `KODEXA_GOOGLE_CLIENT_SECRET` | Segredo desse cliente OAuth |
+| `KODEXA_CREDENTIALS_KEY` | Opcional. 32 bytes em base64 (`openssl rand -base64 32`), no gerenciador de segredos. Guarda as conexões de IA entre reinícios. Trocar ou perder a chave desconecta todas as IAs (os clientes reconectam). |
+| `KODEXA_CHATGPT_CLIENT_ID` | Só depois da liberação da OpenAI para uso do plano ChatGPT em site hospedado. Sem ele, o painel mostra “Aguardando liberação da OpenAI”. |
+| `KODEXA_CHATGPT_CLIENT_SECRET` | Só se a OpenAI emitir segredo para esse cliente (enviado em `client_secret_basic`). |
+| `KODEXA_CHATGPT_MODEL` | Modelo liberado para o uso do plano (os nomes mudam; use o que a OpenAI indicar). Obrigatório junto com o client id. |
+
+Ao receber a liberação do ChatGPT, cadastre na OpenAI o retorno exato `<KODEXA_PUBLIC_ORIGIN>/public/chatgpt/callback`. O fluxo implementado segue a documentação pública (developers.openai.com/siwc): Authorization Code com PKCE S256, `state` e `nonce`, escopos `openid email offline_access resource.invoke chatgpt.tokens.use.direct`, `resource=https://api.openai.com/v1`, ID token conferido pelas chaves publicadas, renovação com troca do refresh token e revogação ao desconectar. A documentação pública cobre apps locais; confira com a OpenAI se os parâmetros do site hospedado são os mesmos antes de ativar.
 
 ```sh
 npm ci

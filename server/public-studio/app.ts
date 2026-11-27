@@ -3,9 +3,12 @@ import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'no
 import { extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { nextPlanningStages, STAGES, type StudioRole } from '../../shared/studio-project';
-import { parseConnection, plan, type Connection } from './planning';
+import { parseConnection, plan, PROVIDER_LABEL, stageInput, stageSystem } from './planning';
+import { chatgptAuthorization, ChatGPTError, exchangeCode, refreshGrant, respond, revokeGrant, type ChatGPTConfig, type PendingAuthorization } from './chatgpt';
+import { connectionState, resolveRoute, type Route, type Team } from './routing';
+import { ConnectionVault, isProvider, PROVIDERS, type Credential, type Provider } from './vault';
 import { HttpError, readJson } from '../http/app';
-import { ProjectError, ProjectStudio } from '../studio/projects';
+import { PlanningApiError, ProjectError, ProjectStudio } from '../studio/projects';
 import { parsePrefs } from '../../client/src/studio/prefs';
 import { googleLogin, googleSubject, opaqueToken, sameToken, type GoogleConfig } from './google';
 
@@ -19,17 +22,8 @@ const maxGoogleExchanges = 16;
 type MutationWindow = { count: number; expires: number };
 type Flow = { state: string; verifier: string; expires: number };
 type Session = { user: string; expires: number };
-type Provider = Connection['provider'];
-type Preferences = {
-  connections: Map<Provider, Connection>;
-  assignments: Map<StudioRole, Provider>;
-  defaultProvider?: Provider;
-};
-
-function isProvider(value: unknown): value is Provider {
-  return value === 'openai' || value === 'anthropic' || value === 'gemini';
-}
-type Team = Partial<Record<StudioRole | 'default', Provider>>;
+type ChatGPTFlow = { user: string; pending: PendingAuthorization; expires: number };
+const chatgptCookiePrefix = '__Host-kodexa-chatgpt-';
 function readTeam(path: string): Team {
   try { return JSON.parse(readFileSync(path, 'utf8')); }
   catch (error) {
@@ -37,9 +31,24 @@ function readTeam(path: string): Team {
     throw error;
   }
 }
-function connectionFor(prefs: Preferences | undefined, role: StudioRole, team: Team) {
-  const provider = team[role] ?? team.default ?? prefs?.assignments.get(role) ?? prefs?.defaultProvider;
-  return provider && prefs?.connections.get(provider);
+const SOURCE_TEXT: Record<Route['source'], string> = {
+  'project-agent': 'por escolha deste projeto',
+  'project-default': 'pela IA padrão deste projeto',
+  'account-agent': 'pela atribuição do agente na conta',
+  'account-default': 'pela IA padrão da conta',
+  none: '',
+};
+const STATE_TEXT: Record<string, string> = {
+  expired: 'a autorização expirou; reconecte em Configurar estúdio',
+  no_permission: 'a conta não liberou o uso para tarefas; reconecte em Configurar estúdio',
+  pending_approval: 'a integração aguarda liberação da OpenAI',
+  available: 'a IA não está conectada; conecte em Configurar estúdio',
+};
+/** Por que a etapa não pode rodar com a IA escolhida (ou undefined quando pode). Identifica a etapa e a IA. */
+function routeProblem(route: Route, stage: string): string | undefined {
+  if (!route.provider) return stage + ': nenhuma IA atribuída. Conecte e escolha uma IA em Configurar estúdio.';
+  if (route.state === 'connected') return undefined;
+  return stage + ' usa ' + PROVIDER_LABEL[route.provider] + ' ' + SOURCE_TEXT[route.source] + ', mas ' + (STATE_TEXT[route.state] ?? 'a IA não está disponível') + '.';
 }
 
 function cookie(name: string, value: string, age: number): string {
@@ -88,6 +97,10 @@ export function createPublicStudio(options: {
   clientSecret: string;
   fetcher?: typeof fetch;
   now?: () => number;
+  /** Chave do cofre de credenciais (32 bytes); sem ela, as conexões ficam só em memória. */
+  credentialKey?: Buffer;
+  /** ChatGPT do cliente: só com a liberação da OpenAI (ver chatgpt.ts); ausente = aguardando liberação. */
+  chatgpt?: ChatGPTConfig;
   /** Pasta dos arquivos de /assets/ (padrão: dist/client/assets, ao lado do servidor compilado). */
   assetsDir?: string;
 }) {
@@ -104,7 +117,11 @@ export function createPublicStudio(options: {
   const flows = new Map<string, Flow>();
   const sessions = new Map<string, Session>();
   const studios = new Map<string, ProjectStudio>();
-  const preferences = new Map<string, Preferences>();
+  const vault = new ConnectionVault(options.dir, options.credentialKey);
+  const chatgptFlows = new Map<string, ChatGPTFlow>();
+  const refreshing = new Map<string, Promise<Credential>>();
+  const fetcher = options.fetcher ?? fetch;
+  const chatgpt = options.chatgpt;
   const mutations = new Map<string, MutationWindow>();
   const clock = options.now ?? Date.now;
   let googleExchanges = 0;
@@ -139,8 +156,9 @@ export function createPublicStudio(options: {
     prune(flows, now);
     prune(sessions, now);
     prune(mutations, now);
+    prune(chatgptFlows, now);
     const activeUsers = new Set([...sessions.values()].map(session => session.user));
-    for (const user of preferences.keys()) if (!activeUsers.has(user)) preferences.delete(user);
+    for (const user of vault.loadedUsers()) if (!activeUsers.has(user)) vault.forgetIfVolatile(user);
     if (method === 'POST' && req.headers.origin !== origin.origin) {
       return json(res, 403, { error: 'Origem não autorizada.' });
     }
@@ -209,37 +227,86 @@ export function createPublicStudio(options: {
 
     // The public process has a positive allowlist and never calls owner routes.
     const action = /^\/public\/projects\/([a-f0-9-]{36})\/(next|approve|team)$/.exec(url.pathname);
-    if (!action && !['/public/projects', '/public/logout', '/public/provider', '/public/preferences'].includes(url.pathname)) {
+    if (!action && !['/public/projects', '/public/logout', '/public/provider', '/public/preferences', '/public/chatgpt', '/public/chatgpt/callback'].includes(url.pathname)) {
       return json(res, 404, { error: 'Página não encontrada.' });
     }
     const sessionId = readCookie(req, sessionCookie);
     const session = sessions.get(sessionId);
-    if (!session) return json(res, 401, { error: 'Entre com Google.' });
+    if (!session) {
+      // Retorno do ChatGPT sem sessão do Kodexa (expirou no meio): volta ao login, sem aceitar a autorização.
+      if (url.pathname === '/public/chatgpt/callback') return redirect(res, '/public/?chatgpt=session');
+      return json(res, 401, { error: 'Entre com Google.' });
+    }
+    const user = session.user;
     if (method === 'POST' && url.pathname === '/public/logout') {
       sessions.delete(sessionId);
-      if (![...sessions.values()].some(other => other.user === session.user)) preferences.delete(session.user);
+      if (![...sessions.values()].some(other => other.user === user)) vault.forgetIfVolatile(user);
       res.setHeader('Set-Cookie', cookie(sessionCookie, '', 0));
       return json(res, 200, { ok: true });
     }
 
+    // ChatGPT do cliente: começa a autorização a partir da sessão Kodexa (GET de navegação, sem efeito além do fluxo).
+    if (method === 'GET' && url.pathname === '/public/chatgpt') {
+      if (!chatgpt) return redirect(res, '/public/?chatgpt=pending');
+      // Limite global e por conta: uma conta não ocupa as autorizações em andamento de todas as outras.
+      if (chatgptFlows.size >= 512 || [...chatgptFlows.values()].filter(flow => flow.user === user).length >= 5) return redirect(res, '/public/?chatgpt=busy');
+      const { url: target, pending } = chatgptAuthorization(chatgpt);
+      const id = opaqueToken();
+      chatgptFlows.set(id, { user, pending, expires: now + loginLifetime * 1000 });
+      res.setHeader('Set-Cookie', cookie(chatgptCookiePrefix + pending.state, id, loginLifetime));
+      return redirect(res, target.href);
+    }
+    if (method === 'GET' && url.pathname === '/public/chatgpt/callback') {
+      const state = url.searchParams.get('state') ?? '';
+      const name = chatgptCookiePrefix + state;
+      const id = /^[A-Za-z0-9_-]{43}$/.test(state) ? readCookie(req, name) : '';
+      const flow = chatgptFlows.get(id);
+      // A transação precisa ser desta sessão: um retorno começado por outra conta não vincula nada aqui.
+      if (!chatgpt || !flow || flow.user !== user || !sameToken(flow.pending.state, state)) return redirect(res, '/public/?chatgpt=expired');
+      chatgptFlows.delete(id);
+      res.setHeader('Set-Cookie', cookie(name, '', 0));
+      if (url.searchParams.has('error')) return redirect(res, '/public/?chatgpt=cancelled');
+      const code = url.searchParams.get('code');
+      if (!code || code.length > 4096) return redirect(res, '/public/?chatgpt=expired');
+      try {
+        const grant = await exchangeCode(chatgpt, code, flow.pending, clock(), fetcher);
+        if (!sessions.has(sessionId)) return redirect(res, '/public/?chatgpt=session');
+        if (!grant.planUsage) {
+          // Identidade sem permissão de uso do plano: não guarda tokens que não servem para tarefas.
+          void revokeGrant(chatgpt, grant.refresh, fetcher);
+          vault.set(user, { provider: 'chatgpt', model: chatgpt.model, linkedAt: clock(), noPermission: true });
+          return redirect(res, '/public/?chatgpt=no_permission');
+        }
+        const previous = vault.get(user, 'chatgpt');
+        vault.set(user, { provider: 'chatgpt', model: chatgpt.model, linkedAt: clock(), oauth: { access: grant.access, refresh: grant.refresh, expiresAt: grant.expiresAt, scope: grant.scope, account: grant.account } });
+        if (previous?.oauth && previous.oauth.refresh !== grant.refresh) void revokeGrant(chatgpt, previous.oauth.refresh, fetcher);
+        const routing = vault.routing(user);
+        if (!routing.defaultProvider) vault.saveRouting(user, { ...routing, defaultProvider: 'chatgpt' });
+        return redirect(res, '/public/?chatgpt=connected');
+      } catch (error) {
+        return redirect(res, '/public/?chatgpt=' + (error instanceof ChatGPTError && error.kind === 'config' ? 'config' : 'failed'));
+      }
+    }
+
     if (method === 'POST') {
-      const limit = mutations.get(session.user) ?? { count: 0, expires: now + mutationWindowMs };
+      const limit = mutations.get(user) ?? { count: 0, expires: now + mutationWindowMs };
       if (limit.count >= mutationLimit) {
         req.resume();
         res.setHeader('Retry-After', String(Math.ceil((limit.expires - now) / 1000)));
         return json(res, 429, { error: 'Muitas alterações em pouco tempo. Aguarde e tente novamente.' });
       }
       limit.count++;
-      mutations.set(session.user, limit);
+      mutations.set(user, limit);
     }
+    const stillSignedIn = () => sessions.get(sessionId) === session && session.expires > clock();
 
     if (url.pathname === '/public/preferences') {
-      const dir = join(options.dir, session.user);
+      const dir = join(options.dir, user);
       const file = join(dir, 'office-prefs');
       if (method === 'POST') {
         const prefs = parsePrefs(JSON.stringify(await readJson(req, 32768)));
         if (!prefs) throw new ProjectError(400, 'Configuração inválida.');
-        if (sessions.get(sessionId) !== session || session.expires <= clock()) return json(res, 401, {error:'Entre com Google.'});
+        if (!stillSignedIn()) return json(res, 401, {error:'Entre com Google.'});
         mkdirSync(dir, {recursive:true});
         writeFileSync(file+'.tmp', JSON.stringify(prefs), {mode:0o600});
         renameSync(file+'.tmp', file);
@@ -249,65 +316,65 @@ export function createPublicStudio(options: {
       try { return json(res,200,parsePrefs(readFileSync(file,'utf8'))); }
       catch(error){if((error as NodeJS.ErrnoException).code !== 'ENOENT')throw error;return json(res,200,null);}
     }
+
     if (url.pathname === '/public/provider') {
-      let prefs = preferences.get(session.user);
       if (method === 'POST') {
         const body = await readJson(req, 2048) as { provider?: unknown; role?: unknown; disconnect?: unknown; assign?: unknown } | null;
-        if (sessions.get(sessionId) !== session || session.expires <= clock()) return json(res, 401, { error: 'Entre com Google.' });
-        prefs ??= { connections: new Map(), assignments: new Map() };
+        if (!stillSignedIn()) return json(res, 401, { error: 'Entre com Google.' });
+        const routing = vault.routing(user);
         if (body?.disconnect === true) {
           if (!isProvider(body.provider)) throw new ProjectError(400, 'Selecione a IA a desconectar.');
-          prefs.connections.delete(body.provider);
-          if (prefs.defaultProvider === body.provider) prefs.defaultProvider = undefined;
-          for (const [role, provider] of prefs.assignments) if (provider === body.provider) prefs.assignments.delete(role);
+          const credential = vault.get(user, body.provider);
+          vault.delete(user, body.provider);
+          if (credential?.oauth && chatgpt) void revokeGrant(chatgpt, credential.oauth.refresh, fetcher);
+          // A escolha da IA (padrão e por agente) continua salva: o painel mostra "disponível para conectar".
         } else if (body?.assign === true) {
-          if(body.provider === null && STAGES.some(([id])=>id===body.role)){ prefs.assignments.delete(body.role as StudioRole); } else {
-          if (!isProvider(body.provider) || !prefs.connections.has(body.provider)) {
-            throw new ProjectError(400, 'Conecte o provedor antes de atribuí-lo.');
+          if (body.role !== 'default' && !STAGES.some(([id]) => id === body.role)) throw new ProjectError(400, 'Selecione uma etapa válida.');
+          if (body.provider === null) {
+            if (body.role === 'default') delete routing.defaultProvider;
+            else delete routing.assignments[body.role as StudioRole];
+          } else {
+            if (!isProvider(body.provider) || !vault.get(user, body.provider)) throw new ProjectError(400, 'Conecte o provedor antes de atribuí-lo.');
+            if (body.role === 'default') routing.defaultProvider = body.provider;
+            else routing.assignments[body.role as StudioRole] = body.provider;
           }
-          if (body.role === 'default') prefs.defaultProvider = body.provider;
-          else {
-            const role = STAGES.find(([id]) => id === body.role)?.[0];
-            if (!role) throw new ProjectError(400, 'Selecione uma etapa válida.');
-            prefs.assignments.set(role, body.provider);
-          }
-          }
+          vault.saveRouting(user, routing);
         } else {
           const connection = parseConnection(body);
-          prefs.connections.set(connection.provider, connection);
-          prefs.defaultProvider ??= connection.provider;
+          vault.set(user, { provider: connection.provider, model: connection.model, key: connection.key, linkedAt: clock() });
+          if (!routing.defaultProvider) vault.saveRouting(user, { ...routing, defaultProvider: connection.provider });
         }
-        preferences.set(session.user, prefs);
       } else if (method !== 'GET') {
         return json(res, 405, { error: 'Método não permitido.' });
       }
-      return json(res, 200, {
-        connections: [...(prefs?.connections.values() ?? [])].map(({ provider, model }) => ({ provider, model })),
-        defaultProvider: prefs?.defaultProvider ?? null,
-        assignments: Object.fromEntries(prefs?.assignments ?? []),
-      });
+      return json(res, 200, providerInfo(user));
     }
     if (action ? method !== 'POST' : url.pathname !== '/public/projects' || (method !== 'GET' && method !== 'POST')) {
       return json(res, 405, { error: 'Método não permitido.' });
     }
-    const teamPath = (id: string) => join(options.dir, session.user, id + '.team.json');
-    let studio = studios.get(session.user);
+    const teamPath = (id: string) => join(options.dir, user, id + '.team.json');
+    const routeOf = (projectId: string, role: StudioRole) =>
+      resolveRoute(role, readTeam(teamPath(projectId)), vault.routing(user), vault.credentials(user), !!chatgpt);
+    let studio = studios.get(user);
     if (!studio) {
       if (studios.size >= 1024) return json(res, 503, { error: 'Capacidade do estúdio atingida.' });
       studio = new ProjectStudio({
-        dir: join(options.dir, session.user),
+        dir: join(options.dir, user),
         env: {},
-        run: (project, stage) => {
-          const connection = connectionFor(preferences.get(session.user), stage[0], readTeam(teamPath(project.id)));
-          if (!connection) throw new ProjectError(409, 'Conecte sua IA para continuar.');
-          return plan(connection, project, stage, options.fetcher);
-        },
+        // A IA é resolvida a cada etapa, pela conta dona do projeto (nunca por um id vindo do navegador).
+        run: (project, stage) => runStage(user, routeOf(project.id, stage[0]), project, stage),
       });
-      studios.set(session.user, studio);
+      studios.set(user, studio);
     }
-    if (method === 'GET') return json(res, 200, studio.info().projects.map(project => ({ ...project, team: readTeam(teamPath(project.id)) })));
+    if (method === 'GET') {
+      return json(res, 200, studio.info().projects.map(project => ({
+        ...project,
+        team: readTeam(teamPath(project.id)),
+        routing: Object.fromEntries(STAGES.map(([role]) => [role, routeOf(project.id, role)])),
+      })));
+    }
     const body = await readJson(req, 16 * 1024);
-    if (sessions.get(sessionId) !== session || session.expires <= clock()) return json(res, 401, { error: 'Entre com Google.' });
+    if (!stillSignedIn()) return json(res, 401, { error: 'Entre com Google.' });
     if (action?.[2] === 'team') {
       const project = studio.info().projects.find(p => p.id === action[1]);
       if (!project) throw new ProjectError(404, 'Projeto não encontrado.');
@@ -318,8 +385,8 @@ export function createPublicStudio(options: {
       const path = teamPath(project.id);
       const team = readTeam(path);
       if (change?.provider === null) delete team[role];
-      else if (isProvider(change?.provider) && preferences.get(session.user)?.connections.has(change.provider)) team[role] = change.provider;
-      else throw new ProjectError(400, 'Conecte essa IA em Minha IA para projetos.');
+      else if (isProvider(change?.provider) && vault.get(user, change.provider)) team[role] = change.provider;
+      else throw new ProjectError(400, 'Conecte essa IA em Configurar estúdio antes de escolhê-la.');
       writeFileSync(path + '.tmp', JSON.stringify(team), { mode: 0o600 });
       renameSync(path + '.tmp', path);
       return json(res, 200, team);
@@ -329,13 +396,85 @@ export function createPublicStudio(options: {
       const project = studio.info().projects.find(candidate => candidate.id === action[1]);
       if (!project) throw new ProjectError(404, 'Projeto não encontrado.');
       const stage = nextPlanningStages(project)[0];
-      if (stage && !connectionFor(preferences.get(session.user), stage[0], readTeam(teamPath(project.id)))) {
-        throw new ProjectError(409, 'Conecte e atribua uma IA para executar esta etapa.');
-      }
+      const problem = stage && routeProblem(routeOf(project.id, stage[0]), stage[1]);
+      if (problem) throw new ProjectError(409, problem);
       return json(res, 202, studio.launch(action[1]));
     }
     return json(res, 201, studio.create({ brief: (body as { brief?: unknown } | null)?.brief, research: false }));
   }
+
+  /** O que o painel mostra das conexões desta conta: estado, modelo e conta vinculada. Nunca chaves nem tokens. */
+  function providerInfo(user: string) {
+    const credentials = vault.credentials(user);
+    const routing = vault.routing(user);
+    return {
+      persistent: vault.persistent,
+      providers: PROVIDERS.map(provider => {
+        const credential = credentials.get(provider);
+        return {
+          provider,
+          state: connectionState(provider, credential, !!chatgpt),
+          model: credential?.model ?? (provider === 'chatgpt' ? chatgpt?.model : undefined) ?? null,
+          account: credential?.oauth?.account ?? null,
+          linkedAt: credential?.linkedAt ?? null,
+        };
+      }),
+      defaultProvider: routing.defaultProvider ?? null,
+      assignments: routing.assignments,
+    };
+  }
+
+  /** Marca a autorização como expirada (a escolha fica salva e o painel pede reconexão). */
+  function markExpired(user: string, provider: Provider, credential: Credential, noPermission = false) {
+    if (vault.get(user, provider) !== credential) return; // desconectada ou trocada enquanto a etapa rodava
+    vault.set(user, { ...credential, ...(noPermission ? { noPermission: true } : { expired: true }) });
+  }
+
+  /** Renova o ChatGPT uma vez por conta (duas abas ou duas etapas esperam a mesma renovação). */
+  function freshChatGPT(user: string, credential: Credential): Promise<Credential> {
+    let pending = refreshing.get(user);
+    if (!pending) {
+      pending = (async () => {
+        const grant = await refreshGrant(chatgpt!, credential.oauth!.refresh, clock(), fetcher);
+        const next: Credential = { ...credential, oauth: { ...credential.oauth!, access: grant.access, refresh: grant.refresh, expiresAt: grant.expiresAt, scope: grant.scope } };
+        if (vault.get(user, 'chatgpt') !== credential) {
+          // Desconectada durante a renovação: não ressuscita a conexão e revoga o token novo.
+          void revokeGrant(chatgpt!, grant.refresh, fetcher);
+          throw new ChatGPTError('O ChatGPT foi desconectado. Reconecte para continuar.', 'expired');
+        }
+        vault.set(user, next);
+        return next;
+      })().finally(() => refreshing.delete(user));
+      refreshing.set(user, pending);
+    }
+    return pending;
+  }
+
+  async function runStage(user: string, route: Route, project: Parameters<typeof plan>[1], stage: Parameters<typeof plan>[2]) {
+    const problem = routeProblem(route, stage[1]);
+    const label = route.provider ? PROVIDER_LABEL[route.provider] : undefined;
+    if (problem) throw new PlanningApiError(problem, label);
+    const provider = route.provider!;
+    let credential = vault.get(user, provider)!;
+    if (provider === 'chatgpt') {
+      try {
+        if (!chatgpt || !credential.oauth) throw new ChatGPTError('Reconecte o ChatGPT para continuar.', 'expired');
+        if (credential.oauth.expiresAt - 60_000 <= clock()) credential = await freshChatGPT(user, credential);
+        const text = await respond(credential.oauth!.access, chatgpt.model, stageSystem(stage), stageInput(project), fetcher);
+        return { text, sources: [], provider: 'chatgpt' };
+      } catch (error) {
+        if (error instanceof ChatGPTError) {
+          if (error.kind === 'expired' || error.kind === 'denied') markExpired(user, provider, vault.get(user, provider) ?? credential, error.kind === 'denied');
+          throw new PlanningApiError(error.message, label);
+        }
+        throw error;
+      }
+    }
+    try {
+      return await plan({ provider, model: credential.model, key: credential.key! }, project, stage, fetcher);
+    } catch (error) {
+      if (error instanceof PlanningApiError && /\(HTTP 401\)/.test(error.message)) markExpired(user, provider, credential);
+      throw error;
+    }
+  }
 }
-
-

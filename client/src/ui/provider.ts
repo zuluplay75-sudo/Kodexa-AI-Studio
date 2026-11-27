@@ -40,19 +40,25 @@ export function accountProvider(account: Pick<AccountInfo, 'provider'> | undefin
  */
 /**
  * Escritório público do Kodexa (client/src/public-office.ts): o agente não tem conta do Claude Code nem do Codex,
- * e sim a IA conectada pelo cliente que a etapa dele usaria. O id é `kodexa:ai:<provedor>` (ou `kodexa:ai:none`), e
+ * e sim a IA conectada pelo cliente que a etapa dele usaria. O id é `kodexa:ai:<provedor>` (`:reconnect` quando a
+ * autorização dela não vale mais), ou `kodexa:ai:none`, e
  * o chip mostra a letra dela, ou um traço com "Nenhuma IA conectada", em vez do "?" de conta desconhecida.
  */
 export const PERSONAL_AI_PREFIX = 'kodexa:ai:';
 const PERSONAL_AI: Record<string, { short: string; name: string }> = {
+  chatgpt: { short: 'C', name: 'ChatGPT' },
   openai: { short: 'O', name: 'OpenAI' },
   anthropic: { short: 'A', name: 'Claude' },
   gemini: { short: 'G', name: 'Gemini' },
 };
 export function personalAiChip(id: string): { short: string; label: string } | undefined {
   if (!id.startsWith(PERSONAL_AI_PREFIX)) return undefined;
-  const ai = PERSONAL_AI[id.slice(PERSONAL_AI_PREFIX.length)];
-  return ai ? { short: ai.short, label: tr('IA conectada: {0}', [ai.name]) } : { short: '–', label: tr('Nenhuma IA conectada') };
+  const [provider, flag] = id.slice(PERSONAL_AI_PREFIX.length).split(':');
+  const ai = PERSONAL_AI[provider];
+  if (!ai) return { short: '–', label: tr('Nenhuma IA conectada') };
+  // A IA escolhida perdeu a autorização (expirada, desconectada ou sem permissão): a escolha fica, pede reconexão.
+  if (flag === 'reconnect') return { short: '!', label: tr('Reconecte {0} em Configurar estúdio', [ai.name]) };
+  return { short: ai.short, label: tr('IA conectada: {0}', [ai.name]) };
 }
 
 export function fallbackShort(id: string, provider: Provider = accountProvider(undefined, id)): string {

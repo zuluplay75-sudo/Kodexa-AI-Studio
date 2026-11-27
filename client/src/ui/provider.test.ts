@@ -102,3 +102,11 @@ describe('personalAiChip (escritório público)', () => {
     expect(fallbackShort('.claude')).toBe('?');
   });
 });
+
+describe('personalAiChip: ChatGPT e reconexão', () => {
+  it('mostra C para ChatGPT e ! quando a IA escolhida precisa ser reconectada', () => {
+    expect(personalAiChip('kodexa:ai:chatgpt')).toEqual({ short: 'C', label: 'IA conectada: ChatGPT' });
+    expect(personalAiChip('kodexa:ai:chatgpt:reconnect')).toEqual({ short: '!', label: 'Reconecte ChatGPT em Configurar estúdio' });
+    expect(personalAiChip('kodexa:ai:gemini:reconnect')?.short).toBe('!');
+  });
+});

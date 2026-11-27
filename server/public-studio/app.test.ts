@@ -106,8 +106,13 @@ it('isolates authenticated projects, consumes the OAuth flow and revokes session
     const next = '/public/projects/' + project.id + '/next';
     expect((await post(next, first, {})).status).toBe(409);
     const connected = await post('/public/provider', first, { provider: 'openai', model: 'test-model', key: 'private-test-key' });
-    expect(await connected.json()).toEqual({ connections: [{ provider: 'openai', model: 'test-model' }], defaultProvider: 'openai', assignments: {} });
-    expect(await (await request('/public/provider', { headers: { Cookie: second } })).json()).toEqual({ connections: [], defaultProvider: null, assignments: {} });
+    const info = await connected.json();
+    expect(info).toMatchObject({ defaultProvider: 'openai', assignments: {} });
+    expect(info.providers.find((p: { provider: string }) => p.provider === 'openai')).toMatchObject({ state: 'connected', model: 'test-model' });
+    expect(JSON.stringify(info)).not.toContain('private-');
+    const other = await (await request('/public/provider', { headers: { Cookie: second } })).json();
+    expect(other).toMatchObject({ defaultProvider: null, assignments: {} });
+    expect(other.providers.every((p: { state: string }) => p.state === 'available' || p.state === 'pending_approval')).toBe(true);
     expect((await post('/public/provider', first, { provider: 'anthropic', model: 'test-claude', key: 'private-claude-key' })).status).toBe(200);
     expect((await post('/public/provider', first, { provider: 'gemini', model: 'test-gemini', key: 'private-gemini-key' })).status).toBe(200);
     expect((await post('/public/provider', first, { assign: true, role: 'manager', provider: 'anthropic' })).status).toBe(200);
@@ -138,7 +143,10 @@ it('isolates authenticated projects, consumes the OAuth flow and revokes session
     }
     expect((await post(next, second, {})).status).toBe(404);
     const disconnected = await post('/public/provider', first, { disconnect: true, provider: 'gemini' });
-    expect((await disconnected.json()).assignments).toEqual({ manager: 'anthropic' });
+    // A escolha fica salva; o painel mostra que o Gemini precisa ser conectado de novo.
+    const afterDisconnect = await disconnected.json();
+    expect(afterDisconnect.assignments).toEqual({ manager: 'anthropic', academy: 'gemini' });
+    expect(afterDisconnect.providers.find((p: { provider: string }) => p.provider === 'gemini').state).toBe('available');
     clock += 60_000;
     for (let i = 0; i < 30; i++) {
       expect((await post('/public/provider', first, { assign: true, role: 'default', provider: 'openai' })).status).toBe(200);

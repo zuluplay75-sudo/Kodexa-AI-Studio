@@ -116,3 +116,23 @@ Informe a branch e o commit, o que mudou para o cliente, testes executados e seu
   cancelamento e duas abas no painel), seções 3 a 6. `feat/kodexa-academy-bootstrap` tem um commit fora desta branch
   (`8351d4a`, link do login Google em `server/http/remote.ts`), ainda não integrado.
 
+
+## Registro da rodada: conexões de IA por cliente (27/11/2026)
+
+- **Publicação (rodada anterior):** o túnel `kodexa-studio` voltou (healthy, 4 conectores) e o domínio serve o build de
+  `2e9544e`; a causa do 1033 era o Codespace suspenso. Ele volta a cair quando o Codespace dorme.
+- **ChatGPT:** a documentação pública da OpenAI (developers.openai.com/siwc) cobre o uso do plano em apps locais e de
+  código aberto; para site hospedado, exige o formulário de interesse (já enviado, recebimento confirmado). Nesta
+  sessão não há como ver o e-mail nem o painel da OpenAI; nenhuma configuração de liberação chegou ao servidor. O fluxo
+  completo está implementado em `server/public-studio/chatgpt.ts` e só liga com `KODEXA_CHATGPT_CLIENT_ID` e
+  `KODEXA_CHATGPT_MODEL`; até lá o painel mostra "Aguardando liberação da OpenAI".
+- **Claude:** chave de API da Anthropic (cobrança por uso). Login do Claude.ai/planos de consumo não pode ser oferecido
+  por sites de terceiros. **Claude Code:** só no computador do cliente; o site não executa sessões nem usa a do dono.
+- **Gemini:** chave do Google AI Studio, separada do login Google do Kodexa; o painel não promete gratuidade.
+- **Implementado:** cofre de credenciais cifrado por usuário (`vault.ts`, opcional via `KODEXA_CREDENTIALS_KEY`),
+  escolhas separadas da autorização (`ai-routing.json`), precedência e origem da IA por etapa (`routing.ts`), estados no
+  painel original, IA efetiva por agente em Projetos IA, falhas identificadas por etapa e retomada sem troca silenciosa.
+- **Testes:** `server/public-studio/connections.test.ts` (10 cenários, provedores simulados) e
+  `client/src/studio/ai-connections.test.ts`. Nenhuma chamada real a provedor foi feita.
+- **Próximo passo de publicação:** gerar `KODEXA_CREDENTIALS_KEY` no gerenciador de segredos do serviço público antes de
+  publicar, ou as conexões continuarão só em memória.

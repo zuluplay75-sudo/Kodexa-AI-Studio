@@ -1,5 +1,7 @@
 import { isAbsolute, resolve } from 'node:path';
 import { createPublicStudio } from './app';
+import { chatgptConfig } from './chatgpt';
+import { vaultKey } from './vault';
 
 const { KODEXA_PUBLIC_ORIGIN, KODEXA_PUBLIC_DATA_DIR, KODEXA_GOOGLE_CLIENT_ID, KODEXA_GOOGLE_CLIENT_SECRET } = process.env;
 if (!KODEXA_PUBLIC_ORIGIN || !KODEXA_PUBLIC_DATA_DIR || !KODEXA_GOOGLE_CLIENT_ID || !KODEXA_GOOGLE_CLIENT_SECRET) {
@@ -17,6 +19,10 @@ const server = createPublicStudio({
   dir: resolve(KODEXA_PUBLIC_DATA_DIR),
   clientId: KODEXA_GOOGLE_CLIENT_ID,
   clientSecret: KODEXA_GOOGLE_CLIENT_SECRET,
+  // Cofre das credenciais de IA dos clientes (openssl rand -base64 32); sem ele, as conexões ficam só em memória.
+  credentialKey: vaultKey(process.env.KODEXA_CREDENTIALS_KEY),
+  // ChatGPT do cliente: só com a liberação da OpenAI (KODEXA_CHATGPT_CLIENT_ID e KODEXA_CHATGPT_MODEL).
+  chatgpt: chatgptConfig(process.env, KODEXA_PUBLIC_ORIGIN),
 });
 const hosted = process.env.RENDER === 'true';
 server.listen(hosted ? Number(process.env.PORT || 10000) : 4750, hosted ? '0.0.0.0' : '127.0.0.1');

@@ -10,6 +10,16 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+- Escritório público: em Configurar estúdio › Conexões e limites das IAs, a pessoa escolhe a IA com uma explicação do
+  que fazer e do que será usado (ChatGPT primeiro; Claude, Gemini e OpenAI por chave de API; Claude Code explicado como
+  uso no próprio computador), vê o estado de cada uma (disponível, conectada, expirada, sem permissão, aguardando
+  liberação) e conecta, reconecta ou desconecta sem ver chaves ou tokens.
+- ChatGPT do cliente: fluxo de autorização pronto, ativado só quando o servidor tiver a liberação da OpenAI; até lá
+  aparece “Aguardando liberação da OpenAI”, sem botão de login.
+- Projetos IA mostra qual IA cada agente usa neste projeto e por quê, e a troca vale só para o projeto escolhido.
+- As escolhas de IA ficam salvas mesmo quando uma autorização expira ou é desconectada; a etapa afetada para, os
+  resultados anteriores ficam e reconectar retoma. As conexões podem ficar guardadas, cifradas, entre reinícios.
+
 - Escritório público: começa em português do Brasil mesmo com o navegador em outro idioma (a escolha feita em
   Configurações › Idioma continua valendo).
 - Escritório público: o logotipo Kodexa, a ilustração do escritório vazio e as artes do mapa carregam (antes davam
