@@ -12,16 +12,17 @@ export const publicStudioPage = `<!doctype html>
 <a id="login" href="/public/google" hidden>Entrar com Google</a>
 <section id="projects" hidden>
 <button id="logout" type="button">Sair</button>
-<details><summary>Conectar Codex e Claude Code</summary>
-<p>Use o escritório do Kodexa no mesmo computador ou ambiente em que suas sessões do Codex e do Claude Code rodam. O escritório detecta essas sessões depois que você entra nas ferramentas pelo terminal.</p>
-<p><a href="http://127.0.0.1:4747/">Abrir escritório neste computador</a></p><p>No celular, use o acesso remoto da sua instalação. O responsável pelo Codespace do Kodexa pode entrar com usuário e senha.</p><p><a href="https://kodexa.ia.br/login">Abrir escritório do responsável</a></p>
-</details>
-<details><summary>Chaves de API para planejamento web</summary>
+<details open><summary>Minha IA para projetos</summary>
 <form id="provider">
-<label for="vendor">Provedor</label><select id="vendor"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select>
-<label for="model">Modelo</label><input id="model" required maxlength="101">
-<label for="key">Chave de API</label><input id="key" type="password" autocomplete="off" required maxlength="512">
-<button type="submit">Conectar IA</button>
+<label for="vendor">Qual IA você quer usar?</label>
+<select id="vendor"><option value="openai">OpenAI</option><option value="anthropic">Claude (Anthropic)</option><option value="gemini">Gemini (Google)</option></select>
+<label for="key">Cole sua chave de API</label>
+<input id="key" type="password" autocomplete="off" spellcheck="false" autocapitalize="none" required maxlength="512">
+<a id="keyHelp" target="_blank" rel="noopener noreferrer" href="https://platform.openai.com/api-keys">Obter chave na OpenAI ↗</a>
+<label for="model">Modelo para o planejamento</label>
+<input id="model" required maxlength="101" spellcheck="false" autocapitalize="none">
+<button type="submit">Usar esta IA</button>
+<p id="providerFeedback" role="status"></p>
 </form>
 <p id="connection"></p>
 <form id="assignment" hidden>
@@ -31,6 +32,10 @@ export const publicStudioPage = `<!doctype html>
 <button id="disconnect" type="button">Desconectar IA selecionada</button>
 <p id="assignments"></p>
 </form></details>
+<details><summary>Conectar Codex e Claude Code</summary>
+<p>Use o escritório do Kodexa no mesmo computador ou ambiente em que suas sessões do Codex e do Claude Code rodam. O escritório detecta essas sessões depois que você entra nas ferramentas pelo terminal.</p>
+<p><a href="http://127.0.0.1:4747/">Abrir escritório neste computador</a></p><p>No celular, use o acesso remoto da sua instalação. O responsável pelo Codespace do Kodexa pode entrar com usuário e senha.</p><p><a href="https://kodexa.ia.br/login">Abrir escritório do responsável</a></p>
+</details>
 <form id="create"><label for="brief">Descreva seu projeto</label>
 <textarea id="brief" minlength="10" maxlength="4000" required></textarea>
 <button type="submit">Criar projeto</button></form><ul id="list"></ul>
@@ -46,6 +51,11 @@ h1 { margin-top: .25rem; }
 a, button { color: inherit; background: #253754; border: 1px solid #657da3; border-radius: .5rem; padding: .65rem 1rem; font: inherit; cursor: pointer; }
 form { display: grid; gap: .75rem; margin: 2rem 0; }
 input, select, textarea { font: inherit; background: #17223a; color: inherit; border: 1px solid #657da3; border-radius: .5rem; padding: .75rem; } textarea { min-height: 6rem; }
+[hidden] { display: none !important; }
+#provider { max-width: 32rem; }
+#provider input, #provider select { min-width: 0; }
+#keyHelp { justify-self: start; background: transparent; border: 0; padding: .25rem 0; color: #8cd8ff; }
+#providerFeedback:empty { display: none; }
 form button { justify-self: start; }
 ul { padding: 0; list-style: none; }
 li { background: #17223a; padding: .85rem; margin: .5rem 0; border-radius: .5rem; overflow-wrap: anywhere; }
@@ -71,6 +81,23 @@ const assigned = document.getElementById('assigned');
 const assignments = document.getElementById('assignments');
 const roleNames = ${JSON.stringify(Object.fromEntries(STAGES.map(([id, name]) => [id, name])))};
 const providerNames = { openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini' };
+const providerSetup = {
+  openai: ['gpt-4.1-mini', 'https://platform.openai.com/api-keys', 'OpenAI'],
+  anthropic: ['claude-haiku-4-5', 'https://platform.claude.com/settings/keys', 'Claude Console'],
+  gemini: ['gemini-2.5-flash', 'https://aistudio.google.com/apikey', 'Google AI Studio'],
+};
+const feedback = document.getElementById('providerFeedback');
+function selectProvider() {
+  const [suggestedModel, url, name] = providerSetup[vendor.value];
+  const help = document.getElementById('keyHelp');
+  help.href = url;
+  help.textContent = 'Obter chave · ' + name + ' ↗';
+  model.value = suggestedModel;
+  key.value = '';
+  feedback.textContent = '';
+}
+vendor.addEventListener('change', selectProvider);
+selectProvider();
 let polling;
 let drafts = new Map();
 
@@ -106,12 +133,19 @@ async function refreshConnection() {
 
 provider.addEventListener('submit', async event => {
   event.preventDefault();
-  status.textContent = '';
+  const button = provider.querySelector('button[type="submit"]');
+  if (button.disabled) return;
+  button.disabled = true;
+  vendor.disabled = true;
+  feedback.textContent = 'Configurando…';
   try {
     await post('/public/provider', { provider: vendor.value, model: model.value.trim(), key: key.value.trim() });
+    key.value = '';
+    feedback.textContent = 'Chave configurada para esta sessão. O provedor verifica o acesso ao executar uma etapa.';
     await refreshConnection();
-  } catch (error) { showError(error); }
-  finally { key.value = ''; }
+  } catch (error) { feedback.textContent = error.message; }
+  finally { button.disabled = false; vendor.disabled = false; }
+
 });
 assignment.addEventListener('submit', async event => {
   event.preventDefault();
