@@ -18,4 +18,5 @@ const server = createPublicStudio({
   clientId: KODEXA_GOOGLE_CLIENT_ID,
   clientSecret: KODEXA_GOOGLE_CLIENT_SECRET,
 });
-server.listen(4750, '127.0.0.1');
+const hosted = process.env.RENDER === 'true';
+server.listen(hosted ? Number(process.env.PORT || 10000) : 4750, hosted ? '0.0.0.0' : '127.0.0.1');
