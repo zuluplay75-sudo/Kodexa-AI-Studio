@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createPublicStudio } from './app';
 import { ConnectorHub } from './connector';
-import { claudeRunner, codexRunner, pair, round, type Runner } from '../../scripts/kodexa-connector';
+import { authorize, claudeRunner, codexRunner, nodeForLauncher, pair, round, type Runner } from '../../scripts/kodexa-connector';
 
 const ORIGIN = 'https://studio.example.test';
 const closers: (() => unknown)[] = [];
@@ -268,5 +268,68 @@ describe('Windows: instalador e Codex instalado pelo npm', () => {
     writeFileSync(launcher, `const fs=require('fs');const a=process.argv.slice(2);process.stdin.resume();process.stdin.on('end',()=>fs.writeFileSync(a[a.indexOf('--output-last-message')+1],'via launcher: '+a[0]));`);
     const r = await codexRunner({ file: process.execPath, args: [launcher] }, tempDir('kx-work-'))({ id: '1', tool: 'codex', prompt: 'oi' });
     expect(r).toEqual({ ok: true, text: 'via launcher: exec' });
+  });
+});
+
+describe('Autorizar este computador (sem código)', () => {
+  it('hub: o pedido só vira token com a aprovação da conta; segredo errado não recolhe; uso único; vence', () => {
+    let now = 5_000_000;
+    const hub = new ConnectorHub(tempDir('kx-hub-'), () => now);
+    const user = 'd'.repeat(64);
+    const r = hub.createRequest('PC <da> Ana', { codex: true });
+    expect(r.id).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(r.userCode).toMatch(/^[A-Z2-9]{4}$/);
+    expect(hub.describeRequest(r.id)).toEqual({ name: 'PC da Ana', userCode: r.userCode, tools: { codex: true, claude: false } });
+    expect(hub.collect(r.id, r.secret)).toEqual({ status: 'pending' });
+    hub.approveRequest(user, r.id);
+    expect(() => hub.approveRequest('e'.repeat(64), r.id)).toThrow(/inválido ou vencido/); // já aprovado
+    expect(hub.collect(r.id, 'segredo-errado')).toEqual({ status: 'expired' });
+    const got = hub.collect(r.id, r.secret);
+    expect(got.status).toBe('approved');
+    expect(hub.authenticate('Bearer ' + (got as { token: string }).token)?.user).toBe(user);
+    expect(hub.collect(r.id, r.secret)).toEqual({ status: 'expired' }); // uma vez só
+    const old = hub.createRequest('x', {});
+    now += 11 * 60_000;
+    expect(hub.describeRequest(old.id)).toBeUndefined();
+    expect(() => hub.approveRequest(user, old.id)).toThrow(/vencido/);
+  });
+
+  it('de ponta a ponta: o conector abre o navegador, a pessoa logada aprova, o conector recebe o token e a IA vira padrão', async () => {
+    const s = await startStudio();
+    const ana = await s.login('ana');
+    const bia = await s.login('bia');
+    const opened: string[] = [];
+    const token = await authorize(ORIGIN, 'Notebook da Ana', { codex: true }, {
+      fetcher: s.local,
+      sleep: async () => {},
+      open: async (url) => {
+        opened.push(url);
+        const id = new URL(url).searchParams.get('conectar')!;
+        // Sem sessão não dá para ver nem aprovar.
+        expect((await s.local(ORIGIN + '/public/connector?request=' + id)).status).toBe(401);
+        const seen = await (await ana('/public/connector?request=' + id)).json();
+        expect(seen.request).toMatchObject({ name: 'Notebook da Ana', tools: { codex: true, claude: false } });
+        expect((await ana('/public/connector/approve', { id })).status).toBe(200);
+        expect((await bia('/public/connector/approve', { id })).status).toBe(409); // já é da Ana
+        return { ok: true };
+      },
+    });
+    expect(opened[0]).toMatch(/^https:\/\/studio\.example\.test\/public\/\?conectar=[A-Za-z0-9_-]{32}$/);
+    expect(token).toMatch(/^kx1\./);
+    expect((await (await ana('/public/connector')).json()).devices[0].name).toBe('Notebook da Ana');
+    expect((await (await ana('/public/provider')).json()).defaultProvider).toBe('codex-local');
+    expect((await (await bia('/public/connector')).json()).devices).toEqual([]);
+    expect(await round(ORIGIN, token, { codex: async () => ({ ok: true, text: 'x' }) }, { wait: false, fetcher: s.local })).toBe(0);
+  });
+
+  it('o link do navegador só é aceito se apontar para o próprio servidor', async () => {
+    const fake: typeof fetch = async () => Response.json({ id: 'a'.repeat(32), secret: 's', userCode: 'ABCD', verifyUrl: 'https://golpe.exemplo/public/?conectar=x', interval: 1 });
+    await expect(authorize(ORIGIN, 'pc', { codex: true }, { fetcher: fake, open: async () => ({ ok: true }) })).rejects.toThrow(/não aceitou o pedido/);
+  });
+
+  it('no .exe (Node SEA) o launcher do Codex usa o node do PATH, não o próprio executável', () => {
+    expect(nodeForLauncher({ PATH: '' }, false)).toBe(process.execPath);
+    expect(nodeForLauncher({ PATH: '' }, true)).toBeUndefined();
+    expect(nodeForLauncher({ PATH: join(process.execPath, '..') }, true)).toBe(process.execPath);
   });
 });

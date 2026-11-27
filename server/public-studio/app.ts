@@ -168,7 +168,7 @@ export function createPublicStudio(options: {
     const activeUsers = new Set([...sessions.values()].map(session => session.user));
     for (const user of vault.loadedUsers()) if (!activeUsers.has(user)) vault.forgetIfVolatile(user);
     // O Kodexa Conector não é um navegador: usa token próprio (sem cookie), então não passa pela checagem de Origin.
-    const connectorRoute = /^\/public\/connector\/(claim|poll|ack)$/.exec(url.pathname)?.[1];
+    const connectorRoute = /^\/public\/connector\/(claim|poll|ack|request|collect)$/.exec(url.pathname)?.[1];
     if (method === 'POST' && !connectorRoute && req.headers.origin !== origin.origin) {
       return json(res, 403, { error: 'Origem não autorizada.' });
     }
@@ -190,6 +190,17 @@ export function createPublicStudio(options: {
           throw error;
         }
       }
+      if (connectorRoute === 'request') {
+        // "Autorizar este computador": o conector ainda não tem conta; recebe o link para a pessoa aprovar.
+        try {
+          const r = hub.createRequest((body as { name?: unknown } | null)?.name, (body as { tools?: unknown } | null)?.tools);
+          return json(res, 200, { ...r, verifyUrl: origin.origin + '/public/?conectar=' + r.id, interval: 3 });
+        } catch (error) {
+          if (error instanceof ConnectorError) return json(res, 429, { error: error.message });
+          throw error;
+        }
+      }
+      if (connectorRoute === 'collect') return json(res, 200, hub.collect((body as { id?: unknown } | null)?.id, (body as { secret?: unknown } | null)?.secret));
       const device = hub.authenticate(req.headers.authorization);
       if (!device) return json(res, 401, { error: 'Computador não pareado ou removido. Pareie de novo em Configurar estúdio.' });
       if (connectorRoute === 'ack') return json(res, 200, { ok: hub.ack(device.user, device.deviceId, body) });
@@ -270,7 +281,7 @@ export function createPublicStudio(options: {
 
     // The public process has a positive allowlist and never calls owner routes.
     const action = /^\/public\/projects\/([a-f0-9-]{36})\/(next|approve|team)$/.exec(url.pathname);
-    if (!action && !['/public/projects', '/public/logout', '/public/provider', '/public/preferences', '/public/chatgpt', '/public/chatgpt/callback', '/public/connector', '/public/connector/pair', '/public/connector/revoke', '/public/connector/windows.cmd'].includes(url.pathname)) {
+    if (!action && !['/public/projects', '/public/logout', '/public/provider', '/public/preferences', '/public/chatgpt', '/public/chatgpt/callback', '/public/connector', '/public/connector/pair', '/public/connector/revoke', '/public/connector/windows.cmd', '/public/connector/approve'].includes(url.pathname)) {
       return json(res, 404, { error: 'Página não encontrada.' });
     }
     const sessionId = readCookie(req, sessionCookie);
@@ -387,9 +398,24 @@ export function createPublicStudio(options: {
             throw error;
           }
         }
-        if (url.pathname === '/public/connector/revoke') {
+        if (url.pathname === '/public/connector/approve') {
+          try {
+            const { tools } = hub.approveRequest(user, body?.id);
+            const routing = vault.routing(user);
+            const found = tools.codex ? 'codex-local' : tools.claude ? 'claude-local' : undefined;
+            if (!routing.defaultProvider && found) vault.saveRouting(user, { ...routing, defaultProvider: found });
+          } catch (error) {
+            if (error instanceof ConnectorError) return json(res, 409, { error: error.message });
+            throw error;
+          }
+        } else if (url.pathname === '/public/connector/revoke') {
           if (!hub.revoke(user, body?.id)) throw new ProjectError(404, 'Computador não encontrado.');
         } else return json(res, 405, { error: 'Método não permitido.' });
+      } else if (method === 'GET' && url.pathname === '/public/connector' && url.searchParams.has('request')) {
+        // A página confere o pedido antes de mostrar "Autorizar este computador?".
+        const request = hub.describeRequest(url.searchParams.get('request'));
+        if (!request) return json(res, 404, { error: 'Pedido de autorização inválido ou vencido. Abra o Kodexa Conector de novo.' });
+        return json(res, 200, { request });
       } else if (method !== 'GET' || url.pathname !== '/public/connector') return json(res, 405, { error: 'Método não permitido.' });
       return json(res, 200, { devices: hub.view(user) });
     }

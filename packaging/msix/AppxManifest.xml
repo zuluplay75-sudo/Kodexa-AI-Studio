@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Kodexa Conector como app MSIX (Microsoft Store). O build.ps1 troca os marcadores __...__:
+  - __IDENTITY_NAME__ e __PUBLISHER__: os valores que o Partner Center mostra para o app reservado
+    (Gerenciamento de produto › Identidade do produto: "Package/Identity/Name" e "Package/Identity/Publisher");
+  - __PUBLISHER_DISPLAY__: o nome do editor na loja; __VERSION__: a versão (a Store exige o último número 0).
+  A Store re-assina o pacote com o certificado da Microsoft: não é preciso certificado próprio.
+  runFullTrust: o conector é um app de desktop que roda o Codex do computador (o mesmo do terminal).
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 desktop rescap">
+
+  <Identity Name="__IDENTITY_NAME__" Publisher="__PUBLISHER__" Version="__VERSION__" ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Kodexa Conector</DisplayName>
+    <PublisherDisplayName>__PUBLISHER_DISPLAY__</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>Faz os agentes do Kodexa AI Studio usarem o Codex deste computador, com a sua conta do ChatGPT.</Description>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="pt-BR" />
+  </Resources>
+
+  <Applications>
+    <Application Id="KodexaConector" Executable="KodexaConector.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Kodexa Conector"
+        Description="Conecta este computador ao Kodexa AI Studio para os agentes usarem o seu Codex."
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+      </uap:VisualElements>
+      <Extensions>
+        <!-- Abre junto com o Windows; a pessoa liga ou desliga em Configurações › Aplicativos › Inicialização. -->
+        <desktop:Extension Category="windows.startupTask" Executable="KodexaConector.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="KodexaConectorInicio" Enabled="true" DisplayName="Kodexa Conector" />
+        </desktop:Extension>
+        <!-- "kodexa-conector" no terminal (para --versao, --autorizar e --esquecer). -->
+        <uap3:Extension Category="windows.appExecutionAlias" Executable="KodexaConector.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="kodexa-conector.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

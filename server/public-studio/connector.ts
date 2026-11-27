@@ -35,6 +35,10 @@ type Pending = ConnectorJob & {
 /** Erro já em português, para mostrar ao cliente na etapa. */
 export class ConnectorError extends Error {}
 
+function cleanName(raw: unknown): string {
+  return (typeof raw === 'string' ? raw : '').replace(/[^\p{L}\p{N} ._-]/gu, '').trim().slice(0, 60) || 'Computador';
+}
+
 function digest(secret: string): string {
   return createHash('sha256').update(secret).digest('hex');
 }
@@ -45,6 +49,9 @@ export class ConnectorHub {
   private readonly jobs = new Map<string, Pending[]>(); // por usuário
   private readonly waiters = new Map<string, Set<() => void>>(); // pollers esperando trabalho, por usuário
   private claimFailures = { count: 0, since: 0 };
+  /** Pedidos "Autorizar este computador": o conector cria, a pessoa aprova no navegador logado, o conector recolhe. */
+  private readonly requests = new Map<string, { secretHash: string; name: string; tools: Record<LocalTool, boolean>; userCode: string; expires: number; user?: string; token?: string }>();
+  private requestWindow = { count: 0, since: 0 };
 
   constructor(private readonly dir: string, private readonly now: () => number = Date.now) {}
 
@@ -93,13 +100,70 @@ export class ConnectorHub {
       throw new ConnectorError('Código de pareamento inválido ou vencido. Gere outro em Configurar estúdio.');
     }
     this.codes.delete(code);
-    const name = (typeof rawName === 'string' ? rawName : '').replace(/[^\p{L}\p{N} ._-]/gu, '').trim().slice(0, 60) || 'Computador';
+    return { token: this.addDevice(entry.user, rawName), user: entry.user };
+  }
+
+  private addDevice(user: string, rawName: unknown): string {
+    const name = cleanName(rawName);
     const secret = randomBytes(32).toString('base64url');
-    const device: Device = { id: randomUUID(), name, hash: digest(secret), createdAt: now };
-    const list = this.devices(entry.user);
+    const device: Device = { id: randomUUID(), name, hash: digest(secret), createdAt: this.now() };
+    const list = this.devices(user);
     if (list.length >= 5) throw new ConnectorError('Esta conta já tem 5 computadores. Remova um em Configurar estúdio.');
-    this.saveDevices(entry.user, [...list, device]);
-    return { token: ['kx1', entry.user, device.id, secret].join('.'), user: entry.user };
+    this.saveDevices(user, [...list, device]);
+    return ['kx1', user, device.id, secret].join('.');
+  }
+
+  private pruneRequests() {
+    const now = this.now();
+    for (const [id, r] of this.requests) if (r.expires <= now) this.requests.delete(id);
+  }
+
+  /**
+   * "Autorizar este computador": o conector pede (sem conta ainda) e recebe um id para o link, um segredo só dele para
+   * recolher o token e um código curto que aparece nas duas telas, para a pessoa conferir que é o mesmo computador.
+   */
+  createRequest(rawName: unknown, rawTools: unknown): { id: string; secret: string; userCode: string; expiresAt: number } {
+    this.pruneRequests();
+    const now = this.now();
+    if (now - this.requestWindow.since > 60_000) this.requestWindow = { count: 0, since: now };
+    if (this.requests.size >= 500 || ++this.requestWindow.count > 120) throw new ConnectorError('Muitos pedidos de autorização agora. Tente de novo em um minuto.');
+    const t = (rawTools ?? {}) as Record<string, unknown>;
+    const id = randomBytes(24).toString('base64url');
+    const secret = randomBytes(32).toString('base64url');
+    const raw = [...randomBytes(4)].map((b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
+    const expiresAt = now + PAIR_MS;
+    this.requests.set(id, { secretHash: digest(secret), name: cleanName(rawName), tools: { codex: t.codex === true, claude: t.claude === true }, userCode: raw, expires: expiresAt });
+    return { id, secret, userCode: raw, expiresAt };
+  }
+
+  /** O que a página mostra antes de aprovar (nome do computador e o código da janela do conector). */
+  describeRequest(id: unknown): { name: string; userCode: string; tools: Record<LocalTool, boolean> } | undefined {
+    this.pruneRequests();
+    const r = typeof id === 'string' ? this.requests.get(id) : undefined;
+    return r && !r.user ? { name: r.name, userCode: r.userCode, tools: r.tools } : undefined;
+  }
+
+  /** A pessoa logada aprova: o computador entra na conta dela; o token espera o conector recolher. */
+  approveRequest(user: string, id: unknown): { tools: Record<LocalTool, boolean> } {
+    this.pruneRequests();
+    const r = typeof id === 'string' ? this.requests.get(id) : undefined;
+    if (!r || r.user) throw new ConnectorError('Pedido de autorização inválido ou vencido. Abra o Kodexa Conector de novo.');
+    r.token = this.addDevice(user, r.name);
+    r.user = user;
+    return { tools: r.tools };
+  }
+
+  /** O conector recolhe o token (uma vez) com o segredo do pedido. */
+  collect(id: unknown, secret: unknown): { status: 'pending' } | { status: 'approved'; token: string } | { status: 'expired' } {
+    this.pruneRequests();
+    const r = typeof id === 'string' ? this.requests.get(id) : undefined;
+    if (!r || typeof secret !== 'string') return { status: 'expired' };
+    const a = Buffer.from(r.secretHash, 'hex');
+    const b = Buffer.from(digest(secret), 'hex');
+    if (!(a.length === b.length && timingSafeEqual(a, b))) return { status: 'expired' };
+    if (!r.token) return { status: 'pending' };
+    this.requests.delete(id as string);
+    return { status: 'approved', token: r.token };
   }
 
   /** Confere o token do conector; devolve a conta e o computador (ou undefined). */

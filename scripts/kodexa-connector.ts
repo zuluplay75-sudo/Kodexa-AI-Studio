@@ -3,9 +3,11 @@
 // (scripts/codex-bridge.ts): sempre de saída, pergunta ao servidor se há trabalho, roda a ferramenta oficial aqui,
 // com a conta e o plano do cliente, e confirma o resultado. Nenhuma chave de API, nenhuma senha sai deste computador.
 //
-//   node kodexa-conector.mjs --codigo ABCD-EFGH        primeira vez (código de Configurar estúdio)
-//   node kodexa-conector.mjs                           depois (usa o pareamento salvo)
-//   opções: --servidor https://studio.kodexa.ia.br, --nome "Meu notebook", --com-claude, --esquecer
+//   Kodexa Conector.exe (ou node kodexa-conector.mjs)  primeira vez: abre o navegador em "Autorizar este computador"
+//   node kodexa-conector.mjs --codigo ABCD-EFGH        alternativa: pareia com o código de Configurar estúdio
+//   depois, sem opções, usa o pareamento salvo
+//   opções: --servidor https://studio.kodexa.ia.br, --nome "Meu notebook", --com-claude, --autorizar, --esquecer,
+//           --versao
 //
 // Segurança:
 // - O token do pareamento fica em ~/.kodexa/conector.json (só para o seu usuário); --esquecer apaga.
@@ -20,7 +22,24 @@ import { homedir, hostname } from 'node:os';
 import { delimiter, isAbsolute, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { findCodexBin } from '../server/messages/codex';
-import { runnableClaudeBin } from '../server/claude-bin';
+import { findExecutable, runnableClaudeBin } from '../server/claude-bin';
+import { createOpener, type Opener } from '../server/spawn/spawn';
+
+export const VERSION = '1.0.0';
+
+/** Rodando como executável único (Kodexa Conector.exe, Node SEA)? Aí process.execPath é o próprio .exe, não o Node. */
+function isSea(): boolean {
+  try {
+    // No pacote CommonJS do .exe, `require` existe no escopo do módulo; no .mjs (ESM) não existe e o resultado é false.
+    return typeof require === 'function' && !!(require('node:sea') as { isSea?: () => boolean }).isSea?.();
+  } catch {
+    return false;
+  }
+}
+/** O Node que roda o launcher do Codex do npm: o próprio processo, ou (no .exe) o node do PATH. */
+export function nodeForLauncher(env: NodeJS.ProcessEnv = process.env, sea = isSea()): string | undefined {
+  return sea ? findExecutable('node', env) : process.execPath;
+}
 
 export const DEFAULT_SERVER = 'https://studio.kodexa.ia.br';
 const TASK_TIMEOUT_MS = 12 * 60_000;
@@ -44,7 +63,7 @@ export type Command = { file: string; args: string[] };
  * que o execFile não roda sem shell: usa o launcher do pacote com o próprio Node (`node .../@openai/codex/bin/codex.js`),
  * que é o que o atalho faz e que acha o codex.exe certo para a máquina.
  */
-export function findCodex(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, exists: (p: string) => boolean = existsSync, node = process.execPath): Command | undefined {
+export function findCodex(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, exists: (p: string) => boolean = existsSync, node: string | undefined = nodeForLauncher(env)): Command | undefined {
   const explicit = env.KODEXA_CODEX_BIN?.trim();
   if (explicit) return exists(explicit) ? { file: explicit, args: [] } : undefined;
   const native = findCodexBin(env);
@@ -54,7 +73,7 @@ export function findCodex(env: NodeJS.ProcessEnv = process.env, platform: NodeJS
   if (env.APPDATA) dirs.push(join(env.APPDATA, 'npm'));
   for (const dir of dirs) {
     const launcher = join(dir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
-    if (exists(launcher)) return { file: node, args: [launcher] };
+    if (exists(launcher) && node) return { file: node, args: [launcher] };
   }
   return undefined;
 }
@@ -139,6 +158,29 @@ export async function pair(server: string, code: string, name: string, fetcher?:
   return r.data.token;
 }
 
+/**
+ * "Autorizar este computador": pede ao Kodexa, abre o navegador no link (a pessoa entra com Google, confere o código
+ * e clica em Autorizar) e espera a aprovação. Devolve o token deste computador.
+ */
+export async function authorize(server: string, name: string, tools: Partial<Record<Tool, boolean>>, opts: { open?: Opener; fetcher?: typeof fetch; log?: (line: string) => void; sleep?: (ms: number) => Promise<void> } = {}): Promise<string> {
+  const r = await post(server, '/public/connector/request', { name, tools }, undefined, opts.fetcher);
+  if (r.status !== 200 || typeof r.data.id !== 'string' || typeof r.data.verifyUrl !== 'string' || !r.data.verifyUrl.startsWith(server + '/public/?conectar=')) {
+    throw new Error(r.data.error ?? 'O Kodexa não aceitou o pedido de autorização (HTTP ' + r.status + ').');
+  }
+  opts.log?.('Código deste computador: ' + r.data.userCode);
+  opts.log?.('Abrindo o navegador para autorizar. Se não abrir, acesse: ' + r.data.verifyUrl);
+  await (opts.open ?? createOpener())(r.data.verifyUrl).catch(() => undefined);
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
+  const until = Date.now() + 10 * 60_000;
+  while (Date.now() < until) {
+    await sleep(Math.max(1, Number(r.data.interval) || 3) * 1000);
+    const c = await post(server, '/public/connector/collect', { id: r.data.id, secret: r.data.secret }, undefined, opts.fetcher).catch(() => undefined);
+    if (c?.data?.status === 'approved' && typeof c.data.token === 'string') return c.data.token;
+    if (c?.data?.status === 'expired') break;
+  }
+  throw new Error('A autorização não foi concluída em 10 minutos. Abra o Kodexa Conector de novo.');
+}
+
 /** Uma rodada: pergunta (com espera), roda as tarefas na ordem e confirma cada uma. Devolve quantas rodou. */
 export async function round(server: string, token: string, runners: Partial<Record<Tool, Runner>>, opts: { wait?: boolean; fetcher?: typeof fetch; log?: (line: string) => void } = {}): Promise<number> {
   const tools = { codex: !!runners.codex, claude: !!runners.claude };
@@ -156,16 +198,16 @@ export async function round(server: string, token: string, runners: Partial<Reco
   return jobs.length;
 }
 
-async function main(argv: string[]): Promise<void> {
+export async function main(argv: string[]): Promise<void> {
   const arg = (name: string) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : undefined; };
   const log = (line: string) => console.log('[kodexa] ' + line);
+  if (argv.includes('--versao')) return log('Kodexa Conector ' + VERSION + (isSea() ? ' (executável único)' : ' (Node ' + process.version + ')'));
   if (argv.includes('--esquecer')) {
     rmSync(configPath(), { force: true });
     return log('Pareamento apagado deste computador. Remova-o também em Configurar estúdio.');
   }
   let config = readConfig();
   const code = arg('--codigo');
-  if (!code && !config) throw new Error('Rode com --codigo <código> (gere o código em Configurar estúdio › Conexões e limites das IAs).');
 
   const work = join(homedir(), '.kodexa', 'trabalho');
   mkdirSync(work, { recursive: true, mode: 0o700 });
@@ -176,13 +218,15 @@ async function main(argv: string[]): Promise<void> {
   if (claude) runners.claude = claudeRunner(claude, work);
   log('Codex: ' + (codex ? 'encontrado (' + [codex.file, ...codex.args].join(' ') + ')' : 'não encontrado — instale com "npm install -g @openai/codex" e entre com "codex login"'));
   log('Claude Code: ' + (claude ? 'encontrado (' + claude + ')' : argv.includes('--com-claude') ? 'não encontrado' : 'desligado (use --com-claude)'));
-  if (!codex && !claude) throw new Error('Nenhuma ferramenta disponível neste computador.');
-  if (code) {
+  if (!codex && !claude) throw new Error('Nenhuma ferramenta disponível neste computador. Instale o Codex ("npm install -g @openai/codex"), entre com "codex login" e abra o conector de novo.');
+  if (code || !config || argv.includes('--autorizar')) {
     const server = (arg('--servidor') ?? config?.server ?? DEFAULT_SERVER).replace(/\/+$/, '');
     if (!/^https:\/\//.test(server) && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(server)) throw new Error('Use um endereço https:// para o servidor.');
-    config = { server, token: await pair(server, code, arg('--nome') ?? hostname(), undefined, { codex: !!codex, claude: !!claude }) };
+    const name = arg('--nome') ?? hostname();
+    const tools = { codex: !!codex, claude: !!claude };
+    config = { server, token: code ? await pair(server, code, name, undefined, tools) : await authorize(server, name, tools, { log }) };
     writeConfig(config);
-    log('Computador pareado com a sua conta do Kodexa.');
+    log('Computador conectado à sua conta do Kodexa.');
   }
   if (!config) throw new Error('Pareamento não encontrado.');
   log('Conectado a ' + config.server + '. Deixe esta janela aberta; Ctrl+C para parar.');

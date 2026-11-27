@@ -23,6 +23,14 @@ const CHATGPT_RETURN: Record<string, string> = {
   config: 'A configuração do ChatGPT neste servidor foi recusada pela OpenAI. Avise o suporte do Kodexa.',
   busy: 'Muitas autorizações em andamento. Tente de novo em alguns minutos.',
 };
+// "Autorizar este computador" (Kodexa Conector): o link chega com ?conectar=<pedido>. Guarda na aba antes do login
+// com Google (que volta para /public/ sem o parâmetro) e tira da barra de endereço.
+const CONNECT_KEY='kodexa.conectar';
+{
+  const pending=new URLSearchParams(location.search).get('conectar');
+  if(pending&&/^[A-Za-z0-9_-]{32}$/.test(pending)){try{sessionStorage.setItem(CONNECT_KEY,pending);}catch{/* aba sem storage: segue só nesta visita */}
+    const url=new URL(location.href);url.searchParams.delete('conectar');history.replaceState(null,'',url.pathname+url.search);(globalThis as {kodexaConnect?:string}).kodexaConnect=pending;}
+}
 const login = document.querySelector<HTMLAnchorElement>('#login')!;
 const logout = document.querySelector<HTMLButtonElement>('#logout')!;
 const status = document.querySelector<HTMLElement>('#status')!;
@@ -206,6 +214,29 @@ async function start(){
     return box;
   }
   mountStudioSetup(showMembers,personal);
+  void confirmComputer();
+  async function confirmComputer(){
+    let id:string|null=(globalThis as {kodexaConnect?:string}).kodexaConnect??null;
+    try{id??=sessionStorage.getItem(CONNECT_KEY);sessionStorage.removeItem(CONNECT_KEY);}catch{/* sem storage */}
+    if(!id)return;
+    const dialog=el('dialog');dialog.id='kodexa-authorize';dialog.className='kodexa-authorize';document.body.append(dialog);
+    const close=el('button','Cancelar');close.type='button';close.onclick=()=>dialog.close();
+    try{
+      const {request:r}=await request<{request:{name:string;userCode:string;tools:{codex:boolean;claude:boolean}}}>('/public/connector?request='+encodeURIComponent(id));
+      const tools=[r.tools.codex&&'Codex',r.tools.claude&&'Claude Code'].filter(Boolean).join(' e ')||'nenhuma ferramenta';
+      const code=el('p','Código: '+r.userCode);code.className='kodexa-authorize__code';
+      const ok=el('button','Autorizar este computador');ok.type='button';ok.className='kodexa-primary';
+      const status=el('p');status.setAttribute('role','status');
+      ok.onclick=async()=>{ok.disabled=true;try{await request('/public/connector/approve',{id});settings=await request<Settings>('/public/provider');changed(()=>{});
+        dialog.replaceChildren(el('h2','Computador autorizado'),el('p',r.name+' agora executa as tarefas dos seus agentes com o '+tools+' dele. Pode voltar à janela do Kodexa Conector.'),close);close.textContent='Fechar';}
+        catch(e){status.textContent=(e as Error).message;ok.disabled=false;}};
+      dialog.append(el('h2','Autorizar este computador?'),
+        el('p','O computador "'+r.name+'" pediu para executar as tarefas dos agentes desta conta, usando o '+tools+' instalado nele.'),
+        code,el('p','Confira se é o mesmo código mostrado na janela do Kodexa Conector. Só autorize se foi você que abriu o conector agora, no seu computador. Você pode remover o computador depois em Configurar estúdio.'),
+        status,ok,close);
+    }catch(e){dialog.append(el('h2','Autorizar este computador'),el('p',(e as Error).message),close);}
+    dialog.showModal();
+  }
   mountProjects({request:async<T>(path:string,body?:unknown)=>{
     if(path==='/api/studio'){settings=await request<Settings>('/public/provider');return {projects:await request('/public/projects'),configured:settings.providers.some(p=>p.state==='connected'),webResearch:false,provider:'personal'} as T;}
     return request<T>(path.replace('/api/studio/projects','/public/projects'),body);
