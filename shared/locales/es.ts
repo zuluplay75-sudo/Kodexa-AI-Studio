@@ -3274,4 +3274,8 @@ export const ES: Readonly<Record<string, string>> = {
   "Carimbo deixado na portaria: {0}": "Sello dejado en la recepción: {0}",
   "Entre no prédio ou chegue mais perto da porta para carimbar.": "Entra al edificio o acércate más a la puerta para sellar.",
   "O carimbo não foi deixado. Tente de novo.": "El sello no se dejó. Inténtalo de nuevo.",
+  "Monte sua equipe em Configurar estúdio: cada pessoa da equipe aparece aqui no escritório.": "Arma tu equipo en Configurar estudio: cada persona del equipo aparece aquí en la oficina.",
+  "Configurar estúdio": "Configurar estudio",
+  "IA conectada: {0}": "IA conectada: {0}",
+  "Nenhuma IA conectada": "Ninguna IA conectada",
 };

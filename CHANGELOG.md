@@ -10,6 +10,15 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+- Escritório público: começa em português do Brasil mesmo com o navegador em outro idioma (a escolha feita em
+  Configurações › Idioma continua valendo).
+- Escritório público: o logotipo Kodexa, a ilustração do escritório vazio e as artes do mapa carregam (antes davam
+  erro 404 e apareciam ícones genéricos).
+- Escritório público: Meu dia, Histórico de sessões e Timelapse (e os atalhos M, L e T), que dependem do escritório
+  local do dono, não aparecem mais para o cliente; o escritório vazio leva a Configurar estúdio, sem a demonstração.
+- Escritório público: cada agente mostra a IA conectada que a etapa dele usaria, ou "Nenhuma IA conectada", em vez de
+  um "?" de conta desconhecida.
+
 - Projetos IA agrupa versões e recolhe relatórios e ações avançadas.
 
 - O cartão do Codex atualiza as cotas também quando uma sessão rápida termina entre ciclos de leitura.

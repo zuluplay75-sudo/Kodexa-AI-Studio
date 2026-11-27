@@ -9,6 +9,7 @@ import {
   hasCodexPermission,
   isCodex,
   looksLikeCodexId,
+  personalAiChip,
   providerOf,
   showsProviderTag,
 } from './provider';
@@ -86,5 +87,18 @@ describe('ferramenta (Claude Code ou Codex)', () => {
     expect(codexApprovalLabel('never')).toBe('Nunca pergunta');
     expect(codexApprovalLabel('outra')).toBe('outra');
     expect(codexApprovalLabel(undefined)).toBe('—');
+  });
+});
+
+describe('personalAiChip (escritório público)', () => {
+  it('mostra a IA conectada da etapa, ou um traço quando nenhuma foi conectada, em vez de "?"', () => {
+    expect(personalAiChip('kodexa:ai:openai')).toEqual({ short: 'O', label: 'IA conectada: OpenAI' });
+    expect(personalAiChip('kodexa:ai:gemini')?.short).toBe('G');
+    expect(personalAiChip('kodexa:ai:none')).toEqual({ short: '–', label: 'Nenhuma IA conectada' });
+    expect(fallbackShort('kodexa:ai:none')).toBe('–');
+    expect(accountChipLabel(undefined, 'kodexa:ai:anthropic', 'claude')).toBe('IA conectada: Claude');
+    // Fora do escritório público nada muda.
+    expect(personalAiChip('.claude')).toBeUndefined();
+    expect(fallbackShort('.claude')).toBe('?');
   });
 });

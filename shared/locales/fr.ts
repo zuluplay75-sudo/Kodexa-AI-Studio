@@ -3290,4 +3290,8 @@ export const FR: Readonly<Record<string, string>> = {
   "Carimbo deixado na portaria: {0}": "Tampon laissé à l'accueil : {0}",
   "Entre no prédio ou chegue mais perto da porta para carimbar.": "Entrez dans l'immeuble ou approchez-vous de la porte pour tamponner.",
   "O carimbo não foi deixado. Tente de novo.": "Le tampon n'a pas été laissé. Réessayez.",
+  "Monte sua equipe em Configurar estúdio: cada pessoa da equipe aparece aqui no escritório.": "Composez votre équipe dans Configurer le studio : chaque membre de l'équipe apparaît ici, dans le bureau.",
+  "Configurar estúdio": "Configurer le studio",
+  "IA conectada: {0}": "IA connectée : {0}",
+  "Nenhuma IA conectada": "Aucune IA connectée",
 };

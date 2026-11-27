@@ -38,7 +38,26 @@ export function accountProvider(account: Pick<AccountInfo, 'provider'> | undefin
  * (".claude-conta2" -> "C", ".codex-trabalho" -> "T"). A pasta padrão do Codex (".codex") vira "X"; a do Claude Code,
  * "?" (como antes). Nunca devolve "." nem vazio.
  */
+/**
+ * Escritório público do Kodexa (client/src/public-office.ts): o agente não tem conta do Claude Code nem do Codex,
+ * e sim a IA conectada pelo cliente que a etapa dele usaria. O id é `kodexa:ai:<provedor>` (ou `kodexa:ai:none`), e
+ * o chip mostra a letra dela, ou um traço com "Nenhuma IA conectada", em vez do "?" de conta desconhecida.
+ */
+export const PERSONAL_AI_PREFIX = 'kodexa:ai:';
+const PERSONAL_AI: Record<string, { short: string; name: string }> = {
+  openai: { short: 'O', name: 'OpenAI' },
+  anthropic: { short: 'A', name: 'Claude' },
+  gemini: { short: 'G', name: 'Gemini' },
+};
+export function personalAiChip(id: string): { short: string; label: string } | undefined {
+  if (!id.startsWith(PERSONAL_AI_PREFIX)) return undefined;
+  const ai = PERSONAL_AI[id.slice(PERSONAL_AI_PREFIX.length)];
+  return ai ? { short: ai.short, label: tr('IA conectada: {0}', [ai.name]) } : { short: '–', label: tr('Nenhuma IA conectada') };
+}
+
 export function fallbackShort(id: string, provider: Provider = accountProvider(undefined, id)): string {
+  const personal = personalAiChip(id);
+  if (personal) return personal.short;
   const rest = id
     .replace(/^.*:/, '')
     .replace(/~\d+$/, '')
@@ -55,6 +74,7 @@ export function showsProviderTag(provider: Provider, accountName = ''): boolean 
 
 /** Rótulo do chip da conta (dica e leitores de tela): "Conta C (dev@x.com)", "Codex · plano Team". */
 export function accountChipLabel(account: Pick<AccountInfo, 'name' | 'email' | 'plan' | 'provider'> | undefined, fallbackId: string, provider: Provider): string {
+  if (!account && personalAiChip(fallbackId)) return personalAiChip(fallbackId)!.label;
   if (!account) return fallbackId ? `${fallbackId}${provider === 'codex' ? ' · Codex' : ''}` : tr('Conta desconhecida');
   if (provider !== 'codex') return `${account.name}${account.email ? ` (${account.email})` : ''}`;
   const tag = showsProviderTag(provider, account.name) ? ' · Codex' : '';

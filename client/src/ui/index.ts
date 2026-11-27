@@ -60,6 +60,10 @@ function isTypingTarget(t: EventTarget | null): boolean {
 }
 
 export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi, city?: CitySceneHost): void {
+  // Escritório público do Kodexa (client/src/public-office.ts): só os controles que funcionam com a sessão e os dados
+  // do cliente. Meu dia, histórico de sessões, timelapse e terminal leem rotas locais do dono (/api/stats,
+  // /api/sessions, /api/timeline...), que o processo público não tem.
+  const personal = root.dataset?.personalOffice === 'true';
   const storage = safeLocalStorage();
   let prefs: UiPrefs = loadPrefs(storage);
   let selection: Selection = world.getSelection();
@@ -179,7 +183,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   const terminal = new TerminalPanel(ctx, pty);
   // Histórico de sessões (terminal): botão no grupo dos painéis da barra superior.
   const history = new HistoryPopover(ctx, terminal);
-  topbar.panelGroup.prepend(history.button);
+  if (!personal) topbar.panelGroup.prepend(history.button);
   // Terminal do agente: o interativo se a sessão roda aqui; senão o de leitura, com "Assumir daqui" para
   // continuar nesta janela (sem o de leitura, o interativo mostra o aviso de "em outro terminal").
   pty.onShow = () => terminal.close();
@@ -274,7 +278,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
   }
   help = new HelpDialog();
   const day = new DayLauncher(ctx, (el) => root.append(el));
-  topbar.addPanelButton(day.button);
+  if (!personal) topbar.addPanelButton(day.button);
   // Botão direito numa sala (lista lateral ou escritório): renomear.
   const renamer = new RoomRenamer(ctx);
   ctx.renameRoom = (id, at) => renamer.open(id, at);
@@ -427,12 +431,13 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
         break;
       case 't':
       case 'T':
+        if (personal) break;
         e.preventDefault();
         toggleTerminal();
         break;
       case 'l':
       case 'L':
-        if (store.mock) break;
+        if (store.mock || personal) break;
         e.preventDefault();
         ctx.toggleTimelapse();
         break;
@@ -452,6 +457,7 @@ export function createUI(root: HTMLElement, store: OfficeStore, world: WorldApi,
         break;
       case 'm':
       case 'M':
+        if (personal) break;
         e.preventDefault();
         day.toggle();
         break;

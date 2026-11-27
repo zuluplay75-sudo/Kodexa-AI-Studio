@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { extname, join, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { nextPlanningStages, STAGES, type StudioRole } from '../../shared/studio-project';
 import { parseConnection, plan, type Connection } from './planning';
 import { HttpError, readJson } from '../http/app';
@@ -55,6 +56,27 @@ function redirect(res: ServerResponse, location: string) {
   res.writeHead(303, { Location: location });
   res.end();
 }
+/**
+ * Arquivos públicos do escritório (logotipo, ilustrações, artes do mapa e o manifest delas): os mesmos do escritório
+ * original, em dist/client/assets. Só leitura, só estas extensões, sem sair da pasta e sem ponto inicial.
+ */
+const ASSET_TYPES: Record<string, string> = { '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json; charset=utf-8' };
+function readAsset(root: string, pathname: string): { type: string; body: Buffer } | undefined {
+  const rel = pathname.slice('/assets/'.length);
+  if (!/^(?:[a-z0-9][a-z0-9_@.-]*\/)*[a-z0-9][a-z0-9_@.-]*$/i.test(rel) || rel.includes('..')) return undefined;
+  const type = ASSET_TYPES[extname(rel).toLowerCase()];
+  if (!type) return undefined;
+  const base = resolve(root);
+  const file = resolve(base, rel);
+  if (!file.startsWith(base + sep)) return undefined;
+  try {
+    if (!statSync(file).isFile()) return undefined;
+    return { type, body: readFileSync(file) };
+  } catch {
+    return undefined;
+  }
+}
+
 function prune<T extends { expires: number }>(entries: Map<string, T>, now: number) {
   for (const [key, entry] of entries) if (entry.expires <= now) entries.delete(key);
 }
@@ -66,7 +88,10 @@ export function createPublicStudio(options: {
   clientSecret: string;
   fetcher?: typeof fetch;
   now?: () => number;
+  /** Pasta dos arquivos de /assets/ (padrão: dist/client/assets, ao lado do servidor compilado). */
+  assetsDir?: string;
 }) {
+  const assetsDir = options.assetsDir ?? fileURLToPath(new URL('../client/assets/', import.meta.url));
   const origin = new URL(options.origin);
   if (origin.protocol !== 'https:' || origin.origin !== options.origin || !options.clientId || !options.clientSecret) {
     throw new Error('Configure a origem HTTPS e as credenciais OAuth do estúdio público.');
@@ -121,6 +146,13 @@ export function createPublicStudio(options: {
     }
 
     if (method === 'GET' && url.pathname === '/public/health') return json(res, 200, { status: 'ok' });
+    if ((method === 'GET' || method === 'HEAD') && url.pathname.startsWith('/assets/')) {
+      const asset = readAsset(assetsDir, url.pathname);
+      if (!asset) return json(res, 404, { error: 'Página não encontrada.' });
+      res.setHeader('Cache-Control', 'no-cache');
+      res.writeHead(200, { 'Content-Type': asset.type, 'Content-Length': asset.body.length });
+      return void res.end(method === 'HEAD' ? undefined : asset.body);
+    }
 
     if (method === 'GET') {
       const resource = url.pathname === '/public/' ? ['text/html', '<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kodexa AI Studio</title><link rel="stylesheet" href="/public/office.css"><script defer src="/public/office.js"></script><body><header id="brand">Kodexa AI Studio</header><main><a hidden id="login" href="/public/google">Entrar com Google</a><canvas hidden id="office-map" aria-label="Escritório Kodexa"></canvas><button hidden id="logout">Sair</button><p id="status" role="status"></p></main></body></html>'] :

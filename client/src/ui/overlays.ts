@@ -108,12 +108,20 @@ export class EmptyState implements UiComponent {
     const show = officeIsEmpty(this.ctx);
     setHidden(this.el, !show);
     if (!show || !snap) return;
-    setText(this.hint, emptyOfficeHint(snap.accounts));
+    // Escritório público (Kodexa): a equipe vem de Configurar estúdio, não do Claude Code no computador, e a
+    // demonstração (que é do servidor local) não existe; o botão leva à configuração.
+    const personal = this.ctx.root.dataset?.personalOffice === 'true';
+    setText(this.hint, personal ? tr('Monte sua equipe em Configurar estúdio: cada pessoa da equipe aparece aqui no escritório.') : emptyOfficeHint(snap.accounts));
+    setText(this.demoBtn, personal ? tr('Configurar estúdio') : tr('Ver demonstração'));
     this.demoBtn.disabled = this.busy;
     setHidden(this.demoBtn, store.mock);
   }
 
   private async startDemo(): Promise<void> {
+    if (this.ctx.root.dataset?.personalOffice === 'true') {
+      document.getElementById('kodexa-setup-launch')?.click();
+      return;
+    }
     this.busy = true;
     this.ctx.invalidate();
     try {

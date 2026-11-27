@@ -1,6 +1,6 @@
 import { request as httpRequest } from 'node:http';
 import { once } from 'node:events';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Script } from 'node:vm';
@@ -159,3 +159,44 @@ it('isolates authenticated projects, consumes the OAuth flow and revokes session
   }
 });
 
+
+it('serves only the office assets (logo, illustrations, art manifest) without leaving the assets folder', async () => {
+  const origin = 'https://studio.example.test';
+  const dir = mkdtempSync(join(tmpdir(), 'kodexa-public-'));
+  const assetsDir = mkdtempSync(join(tmpdir(), 'kodexa-assets-'));
+  mkdirSync(join(assetsDir, 'brand'));
+  writeFileSync(join(assetsDir, 'brand', 'kodexa-mark.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+  writeFileSync(join(assetsDir, 'manifest.json'), '{"version":1}');
+  writeFileSync(join(assetsDir, 'notes.txt'), 'não é um asset');
+  writeFileSync(join(dir, 'secret.json'), '{"segredo":true}');
+  const server = createPublicStudio({ origin, dir, assetsDir, clientId: 'fake', clientSecret: 'fake' });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Invalid test address');
+  const get = (path: string) => new Promise<{ status: number; type: string; body: string }>((resolve, reject) => {
+    httpRequest({ hostname: '127.0.0.1', port: address.port, path, headers: { Host: new URL(origin).host } }, res => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => resolve({ status: res.statusCode!, type: String(res.headers['content-type']), body: Buffer.concat(chunks).toString() }));
+      res.on('error', reject);
+    }).on('error', reject).end();
+  });
+  try {
+    const mark = await get('/assets/brand/kodexa-mark.svg');
+    expect(mark.status).toBe(200);
+    expect(mark.type).toBe('image/svg+xml');
+    expect((await get('/assets/manifest.json')).body).toBe('{"version":1}');
+    // Extensão fora da lista, pasta, arquivo inexistente e tentativas de sair da pasta: 404 sem conteúdo.
+    for (const path of ['/assets/notes.txt', '/assets/brand', '/assets/nada.png', '/assets/../secret.json',
+      '/assets/%2e%2e/secret.json', '/assets/..%2fsecret.json', '/assets/brand/../../secret.json', '/assets/.hidden.json']) {
+      const res = await get(path);
+      expect(res.status, path).toBe(404);
+      expect(res.body, path).not.toContain('segredo');
+    }
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(assetsDir, { recursive: true, force: true });
+  }
+});

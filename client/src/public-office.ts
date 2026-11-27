@@ -1,3 +1,4 @@
+import './public-locale';
 import { OfficeStore } from './net/store';
 import { createUI } from './ui';
 import { createWorld } from './world';
@@ -5,6 +6,7 @@ import { mountProjects } from './studio/projects';
 import { mountStudioSetup } from './studio/onboarding';
 import type { Member, StudioPrefs } from './studio/prefs';
 import { STAGES, type StudioProject } from '../../shared/studio-project';
+import { PERSONAL_AI_PREFIX } from './ui/provider';
 import './public-office.css';
 
 const models = {openai:'gpt-4.1-mini', anthropic:'claude-sonnet-4-5', gemini:'gemini-2.5-flash'};
@@ -54,11 +56,20 @@ async function start(){
   renderConnections();
   window.addEventListener('pagehide',()=>world.destroy(),{once:true});
   let revision=0;
+  let shown:Member[]=[];
+  // IA que a etapa do agente usaria na conta (mesma precedência de connectionFor no servidor, sem a equipe de um
+  // projeto): a atribuição da etapa, senão a IA padrão da conta. Sem nenhuma: "none" (o chip mostra um traço).
+  function aiOf(member:Member){
+    const role=STAGES.find(([id])=>id===member.id)?.[0];
+    const provider=(role&&settings.assignments[role])||settings.defaultProvider;
+    return PERSONAL_AI_PREFIX+(provider&&settings.connections.some(c=>c.provider===provider)?provider:'none');
+  }
   function showMembers(members:Member[]){
+    shown=members;
     const now=Date.now();
     store.receivePersonalSnapshot({rev:++revision,serverTime:now,accounts:[],meta:{demo:false,version:'',sources:[],startedAt:now},
       rooms:members.length?[{id:'office',name:personal.prefs?.company??'Kodexa',path:'',slot:0,seed:1,createdAt:now}]:[],
-      agents:members.map((m,i)=>({id:m.id,roomId:'office',name:m.name,role:m.role,kind:'main',look:i%2?'m':'f',sessionId:'',account:'',status:'idle',seed:1+i,startedAt:now,lastEventAt:now,statusSince:now,recent:[],tasks:[],stats:{toolCalls:0,tokensIn:0,tokensOut:0,subagents:0}}))});
+      agents:members.map((m,i)=>({id:m.id,roomId:'office',name:m.name,role:m.role,kind:'main',look:i%2?'m':'f',sessionId:'',account:aiOf(m),status:'idle',seed:1+i,startedAt:now,lastEventAt:now,statusSince:now,recent:[],tasks:[],stats:{toolCalls:0,tokensIn:0,tokensOut:0,subagents:0}}))});
   }
   function select(current:string,options:string[],fallback?:string){
     const input=document.createElement('select');
@@ -78,7 +89,7 @@ async function start(){
     for(const disconnect of [false,true]){
       const b=document.createElement('button');b.type='button';b.textContent=disconnect?'Desconectar':'Conectar IA';
       b.onclick=async()=>{b.disabled=true;try{
-        settings=await request('/public/provider',disconnect?{provider:vendor.value,disconnect:true}:{provider:vendor.value,model:model.value.trim(),key:key.value.trim()});renderConnections();refresh();
+        settings=await request('/public/provider',disconnect?{provider:vendor.value,disconnect:true}:{provider:vendor.value,model:model.value.trim(),key:key.value.trim()});renderConnections();showMembers(shown);refresh();
       }catch(e){feedback.textContent=(e as Error).message;}finally{b.disabled=false;}};
       box.append(b);
     }
@@ -89,7 +100,7 @@ async function start(){
     picker:(role:string)=>{
       const input=select(settings.assignments[role]??'',settings.connections.map(x=>x.provider),'Padrão da conta');
       input.onchange=async()=>{const previous=settings.assignments[role]??'';input.disabled=true;try{
-        settings=await request('/public/provider',{assign:true,role,provider:input.value||null});
+        settings=await request('/public/provider',{assign:true,role,provider:input.value||null});showMembers(shown);
       }catch(e){input.value=previous;alert((e as Error).message);}finally{input.disabled=false;}};
       return input;
     }};

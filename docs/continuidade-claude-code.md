@@ -95,3 +95,24 @@ Use build verificado e revisão identificável para publicar. Confirme como o pr
 ## Relatório que encerra cada rodada
 
 Informe a branch e o commit, o que mudou para o cliente, testes executados e seus resultados, qual versão está no domínio e o que foi visto após login. Inclua os passos para verificar e reverter a publicação. Separe pendências do produto de dependências externas, como aprovação da OpenAI, autorização de uma conta pessoal e validação em aparelho físico. Se uma delas bloquear uma frente, continue as demais. Comece pela seção 1 e pelo primeiro teste de conta nova da seção 2.
+
+## Registro da rodada de 27/11/2026 (Claude Code, nuvem)
+
+- **Publicação não verificada:** `kodexa.ia.br` e `studio.kodexa.ia.br` responderam Cloudflare **1033** (túnel sem
+  conector) durante toda a rodada. Esta sessão não tem acesso ao Codespace nem ao túnel; nada foi publicado ou
+  alterado lá.
+- **Verificação local:** o `createPublicStudio` real foi servido em HTTPS com o host `studio.kodexa.ia.br` apontado
+  para a máquina de teste, com apenas as duas chamadas ao Google simuladas, e percorrido no Chromium (desktop
+  1280×800 e celular 390×844) com contas descartáveis.
+- **Confirmado:** conta nova começa com mapa, zero agentes e zero conexões; recarga mantém os dados; nomes PCIC, ACC,
+  GTC e PC aparecem na lateral e sobre os personagens; Sair leva a `/login` e depois projetos e preferências
+  respondem 401; uma segunda conta no mesmo navegador não herda nada da primeira.
+- **Corrigido:** idioma inicial pt-BR (`client/src/public-locale.ts`); `/assets/` no servidor público; controles do
+  dono ocultos no público; escritório vazio orientando a Configurar estúdio; chips de IA em vez de "?".
+- **Testes:** `server/sources/watcher.test.ts` e `tail.test.ts` passaram 10/10 isolados, juntos e 6 vezes em paralelo;
+  a correção de reescrita com o mesmo horário (`2d0e472`) já está nesta branch. A única falha da suíte
+  (`server/test/statusline.test.ts`, "nome antigo") ocorre só como root e passa como usuário comum.
+- **Pendências seguintes:** seção 1 (contadores e busca ligados a eventos reais de projeto), seção 2 (expiração,
+  cancelamento e duas abas no painel), seções 3 a 6. `feat/kodexa-academy-bootstrap` tem um commit fora desta branch
+  (`8351d4a`, link do login Google em `server/http/remote.ts`), ainda não integrado.
+
