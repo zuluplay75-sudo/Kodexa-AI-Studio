@@ -114,21 +114,27 @@ it('isolates authenticated projects, consumes the OAuth flow and revokes session
     expect((await post('/public/provider', first, { provider: 'gemini', model: 'test-gemini', key: 'private-gemini-key' })).status).toBe(200);
     expect((await post('/public/provider', first, { assign: true, role: 'manager', provider: 'anthropic' })).status).toBe(200);
     expect((await post('/public/provider', first, { assign: true, role: 'academy', provider: 'gemini' })).status).toBe(200);
+    const team = '/public/projects/' + project.id + '/team';
+    expect((await post(team, second, { role: 'scout', provider: 'openai' })).status).toBe(404);
+    expect(await (await post(team, first, { role: 'scout', provider: 'openai' })).json()).toEqual({ scout: 'openai' });
+    const sibling = await (await create(origin)).json();
+    const projects = await (await request('/public/projects', { headers: { Cookie: first } })).json();
+    expect(projects.find((p: { id: string }) => p.id === sibling.id).team).toEqual({});
     expect((await post(next, first, {})).status).toBe(202);
     await vi.waitFor(async () => {
       const response = await request('/public/projects', { headers: { Cookie: first } });
-      expect((await response.json())[0].state).toBe('approval');
+      expect((await response.json()).find((p: { id: string }) => p.id === project.id).state).toBe('approval');
     });
     expect((await post('/public/projects/' + project.id + '/approve', second, { decision: 'Outra conta' })).status).toBe(404);
     expect((await post('/public/projects/' + project.id + '/approve', first, { decision: 'Minha decisão' })).status).toBe(200);
     const list = (session: string) => request('/public/projects', { headers: { Cookie: session } });
-    expect(await (await list(first)).json()).toHaveLength(1);
+    expect(await (await list(first)).json()).toHaveLength(2);
     expect(await (await list(second)).json()).toEqual([]);
     for (const provider of ['anthropic', 'gemini']) {
       expect((await post(next, first, {})).status).toBe(202);
       await vi.waitFor(async () => {
         const projects = await (await list(first)).json();
-        expect(projects[0].stages.at(-1).provider).toBe(provider);
+        expect(projects.find((p: { id: string }) => p.id === project.id).stages.at(-1).provider).toBe(provider);
         expect(JSON.stringify(projects)).not.toContain('private-');
       });
     }
