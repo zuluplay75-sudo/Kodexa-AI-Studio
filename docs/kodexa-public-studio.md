@@ -2,6 +2,28 @@
 
 O serviço público tem processo próprio e oferece cadastro com Google, projetos privados e planejamento com as IAs de cada conta. Os projetos são persistidos no diretório público.
 
+## IA no computador do cliente (Kodexa Conector)
+
+É o jeito do Habblaud original: a IA roda no computador do cliente, com o Codex (logado na conta do ChatGPT) ou o
+Claude Code (logado na conta Claude) dele, sem chave e sem custo de API. O servidor público só guarda a fila.
+
+1. Em **Configurar estúdio › Conexões e limites das IAs**, a pessoa escolhe “Codex no seu computador” e gera um código
+   de pareamento (10 minutos, uso único).
+2. No computador dela, com Node.js 20+ e o Codex instalado e logado (`codex login`):
+   `curl -fsSL <origem>/public/kodexa-conector.mjs -o kodexa-conector.mjs` e
+   `node kodexa-conector.mjs --codigo <código>` (`--com-claude` liga também o Claude Code).
+3. O conector guarda um token só daquele computador em `~/.kodexa/conector.json` (o servidor guarda só o hash, em
+   `connector-devices.json`) e passa a perguntar por tarefas (`/public/connector/poll`, sempre de saída), roda
+   `codex exec --sandbox read-only --ephemeral` (ou `claude -p --permission-mode dontAsk`) numa pasta vazia em
+   `~/.kodexa/trabalho` e devolve o texto (`/public/connector/ack`).
+4. O computador precisa estar ligado com o conector aberto. Desligado, a etapa não começa e o painel diz isso;
+   **Remover** no painel invalida o token na hora.
+
+As tarefas são de planejamento (texto). Nada é editado nem executado no computador do cliente. O uso do Claude Code
+automatizado por outro programa pode estar sujeito aos termos do plano Claude; por isso ele só entra com `--com-claude`.
+
+## Credenciais e escolhas
+
 As IAs de cada conta ficam em duas partes, sempre isoladas por usuário (`<diretório>/<usuário>/`):
 
 - **Escolhas** (`ai-routing.json`): IA padrão da conta e IA de cada agente. Não têm segredo e sobrevivem a reinícios e à expiração de uma autorização; o painel pede reconexão em vez de esquecer a escolha. A escolha por projeto fica em `<projeto>.team.json`.

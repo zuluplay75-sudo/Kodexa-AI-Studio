@@ -24,6 +24,18 @@ await build({
   minify: true,
 });
 
+// Kodexa Conector: um arquivo só, sem dependências, para o cliente baixar de /public/kodexa-conector.mjs e rodar
+// com `node kodexa-conector.mjs` no computador dele (scripts/kodexa-connector.ts).
+await build({
+  entryPoints: ['scripts/kodexa-connector.ts'],
+  outfile: 'dist/server/kodexa-conector.mjs',
+  bundle: true,
+  platform: 'node',
+  target: 'node20',
+  format: 'esm',
+  logLevel: 'warning',
+});
+
 const info = writeBuildInfo('dist/build.json');
 console.log(`  dist/build.json  ${info.commit === 'unknown' ? 'unknown' : info.commit.slice(0, 12)}${info.dirty ? ' (dirty)' : ''}`);
 

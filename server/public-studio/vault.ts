@@ -11,7 +11,12 @@ import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path';
 import { STAGES, type StudioRole } from '../../shared/studio-project';
 
-export const PROVIDERS = ['chatgpt', 'openai', 'anthropic', 'gemini'] as const;
+/** IAs que a conta pode usar. `codex-local` e `claude-local` rodam no computador do cliente (connector.ts): sem credencial aqui. */
+export const PROVIDERS = ['codex-local', 'claude-local', 'chatgpt', 'openai', 'anthropic', 'gemini'] as const;
+export const LOCAL_PROVIDERS = { 'codex-local': 'codex', 'claude-local': 'claude' } as const;
+export function isLocal(provider: Provider): provider is keyof typeof LOCAL_PROVIDERS {
+  return provider in LOCAL_PROVIDERS;
+}
 export type Provider = typeof PROVIDERS[number];
 export function isProvider(value: unknown): value is Provider {
   return typeof value === 'string' && (PROVIDERS as readonly string[]).includes(value);

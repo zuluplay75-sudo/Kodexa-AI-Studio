@@ -1,0 +1,218 @@
+// Kodexa Conector (como o codex-bridge do Habblaud original): pareamento por conta, fila de tarefas, presença,
+// remoção do computador e a etapa do projeto rodando no "computador do cliente". Tudo simulado: o conector de verdade
+// (scripts/kodexa-connector.ts) fala com o servidor por HTTP, mas a ferramenta (Codex/Claude Code) é falsa.
+import { once } from 'node:events';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createPublicStudio } from './app';
+import { ConnectorHub } from './connector';
+import { claudeRunner, codexRunner, pair, round, type Runner } from '../../scripts/kodexa-connector';
+
+const ORIGIN = 'https://studio.example.test';
+const closers: (() => unknown)[] = [];
+afterEach(async () => {
+  for (const close of closers.splice(0).reverse()) await close();
+});
+function tempDir(prefix: string) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  closers.push(() => rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+describe('ConnectorHub', () => {
+  it('código de uso único, token por computador, remoção e presença', async () => {
+    let now = 1_000_000;
+    const hub = new ConnectorHub(tempDir('kx-hub-'), () => now);
+    const user = 'a'.repeat(64);
+    const { code } = hub.pairCode(user);
+    expect(code).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+    const { token } = hub.claim(code.toLowerCase(), 'Notebook <da> Ana');
+    expect(() => hub.claim(code, 'outro')).toThrow(/inválido ou vencido/);
+    const device = hub.authenticate('Bearer ' + token)!;
+    expect(device.user).toBe(user);
+    expect(hub.authenticate('Bearer ' + token.slice(0, -1) + (token.endsWith('A') ? 'B' : 'A'))).toBeUndefined();
+    expect(hub.devices(user)[0].name).toBe('Notebook da Ana');
+    expect(JSON.stringify(hub.devices(user))).not.toContain(token.split('.')[3]); // só o hash fica guardado
+    expect(hub.status(user, 'codex')).toBe('offline');
+    await hub.poll(user, device.deviceId, { codex: true });
+    expect(hub.status(user, 'codex')).toBe('online');
+    expect(hub.status(user, 'claude')).toBe('missing'); // ligado, mas sem o Claude Code
+    now += 46_000;
+    expect(hub.status(user, 'codex')).toBe('offline');
+    hub.revoke(user, device.deviceId);
+    expect(hub.authenticate('Bearer ' + token)).toBeUndefined();
+    expect(hub.status(user, 'codex')).toBe('none');
+    // Código vencido.
+    const late = hub.pairCode(user).code;
+    now += 11 * 60_000;
+    expect(() => hub.claim(late, 'x')).toThrow(/vencido/);
+  });
+
+  it('tarefa: só o computador que pegou confirma; computador desligado nem começa; prazo devolve erro', async () => {
+    const hub = new ConnectorHub(tempDir('kx-hub-'));
+    const user = 'b'.repeat(64);
+    const first = hub.authenticate('Bearer ' + hub.claim(hub.pairCode(user).code, 'um').token)!;
+    const second = hub.authenticate('Bearer ' + hub.claim(hub.pairCode(user).code, 'dois').token)!;
+    await expect(hub.run(user, 'codex', 'oi')).rejects.toThrow(/desligado/);
+    await hub.poll(user, first.deviceId, { codex: true });
+    const result = hub.run(user, 'codex', 'planeje');
+    const [job] = await hub.poll(user, first.deviceId, { codex: true });
+    expect(job).toMatchObject({ tool: 'codex', prompt: 'planeje' });
+    expect(await hub.poll(user, second.deviceId, { codex: true })).toEqual([]); // já está com o primeiro
+    expect(hub.ack(user, second.deviceId, { id: job.id, ok: true, text: 'intruso' })).toBe(false);
+    expect(hub.ack(user, first.deviceId, { id: job.id, ok: true, text: 'plano pronto' })).toBe(true);
+    await expect(result).resolves.toBe('plano pronto');
+    const failing = hub.run(user, 'codex', 'x');
+    const [j2] = await hub.poll(user, first.deviceId, { codex: true });
+    hub.ack(user, first.deviceId, { id: j2.id, ok: false, error: 'not logged in\nlinha 2' });
+    await expect(failing).rejects.toThrow('O Codex no seu computador não concluiu a tarefa: not logged in linha 2');
+    await expect(hub.run(user, 'codex', 'x', 30)).rejects.toThrow(/não devolveu a tarefa a tempo/);
+  });
+
+  it('a espera do conector termina quando chega trabalho', async () => {
+    const hub = new ConnectorHub(tempDir('kx-hub-'));
+    const user = 'c'.repeat(64);
+    const d = hub.authenticate('Bearer ' + hub.claim(hub.pairCode(user).code, 'pc').token)!;
+    await hub.poll(user, d.deviceId, { claude: true });
+    const waiting = hub.poll(user, d.deviceId, { claude: true }, 5_000);
+    const result = hub.run(user, 'claude', 'tarefa');
+    const jobs = await waiting;
+    expect(jobs).toHaveLength(1);
+    hub.ack(user, d.deviceId, { id: jobs[0].id, ok: true, text: 'feito' });
+    await expect(result).resolves.toBe('feito');
+  });
+});
+
+async function startStudio() {
+  const dir = tempDir('kx-studio-');
+  const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+    const url = String(input);
+    if (url === 'https://oauth2.googleapis.com/token') return Response.json({ access_token: (init?.body as URLSearchParams).get('code') });
+    if (url === 'https://openidconnect.googleapis.com/v1/userinfo') return Response.json({ sub: new Headers(init?.headers).get('authorization')!.slice(7) });
+    throw new Error('Chamada externa inesperada: ' + url); // nenhuma API de IA é chamada neste caminho
+  });
+  const server = createPublicStudio({ origin: ORIGIN, dir, clientId: 'g', clientSecret: 'g', fetcher });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const { port } = server.address() as { port: number };
+  closers.push(() => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }));
+  /** fetch que leva https://studio.example.test/... ao servidor de teste (é o que o conector usa). */
+  const local: typeof fetch = (input, init) => new Promise((resolve, reject) => {
+    const url = new URL(String(input));
+    const headers: Record<string, string> = { Host: url.host };
+    new Headers(init?.headers).forEach((v, k) => { headers[k] = v; });
+    const req = httpRequest({ hostname: '127.0.0.1', port, path: url.pathname + url.search, method: init?.method ?? 'GET', headers }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () => {
+        const out = new Headers();
+        for (let i = 0; i < res.rawHeaders.length; i += 2) out.append(res.rawHeaders[i], res.rawHeaders[i + 1]);
+        resolve(new Response(Buffer.concat(chunks), { status: res.statusCode!, headers: out }));
+      });
+    });
+    req.on('error', reject);
+    req.end(typeof init?.body === 'string' ? init.body : undefined);
+  });
+  const browser = (session?: string) => (path: string, body?: unknown) => local(ORIGIN + path, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { ...(session ? { Cookie: session } : {}), ...(body === undefined ? {} : { Origin: ORIGIN, 'Content-Type': 'application/json' }) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  async function login(code: string) {
+    const start = await browser()('/public/google');
+    const state = new URL(start.headers.get('location')!).searchParams.get('state')!;
+    const back = await local(ORIGIN + '/public/google/callback?' + new URLSearchParams({ code, state }), { headers: { Cookie: start.headers.getSetCookie()[0].split(';')[0] } });
+    return browser(back.headers.getSetCookie()[1].split(';')[0]);
+  }
+  return { local, login, dir };
+}
+
+describe('Kodexa Conector de ponta a ponta (servidor público + conector real + ferramenta falsa)', () => {
+  it('pareia pelo painel, roda a etapa no computador do cliente e mostra o resultado; sem chave de API', async () => {
+    const s = await startStudio();
+    const ana = await s.login('ana');
+    const bia = await s.login('bia');
+    // Sem computador pareado: a opção existe, mas está disponível para conectar e não pode ser escolhida ainda.
+    const before = await (await ana('/public/provider')).json();
+    expect(before.providers.find((p: { provider: string }) => p.provider === 'codex-local').state).toBe('available');
+    expect((await ana('/public/provider', { assign: true, role: 'default', provider: 'codex-local' })).status).toBe(400);
+    const { code, server } = await (await ana('/public/connector/pair', {})).json();
+    expect(server).toBe(ORIGIN);
+    const token = await pair(ORIGIN, code, 'Notebook', s.local, { codex: true });
+    // Pareado mas ainda sem perguntar: "computador desligado"; o Codex encontrado virou a IA padrão da conta nova.
+    const paired = await (await ana('/public/provider')).json();
+    expect(paired.providers[0]).toMatchObject({ provider: 'codex-local', state: 'offline' });
+    expect(paired.defaultProvider).toBe('codex-local');
+    const p = await (await ana('/public/projects', { brief: 'Aplicativo da oficina — teste', research: false })).json();
+    const blocked = await ana('/public/projects/' + p.id + '/next', {});
+    expect(blocked.status).toBe(409);
+    expect((await blocked.json()).error).toBe('Kodexa Scout usa Codex no seu computador pela IA padrão da conta, mas o computador com o Kodexa Conector está desligado ou sem essa ferramenta.');
+
+    const seen: string[] = [];
+    const fakeCodex: Runner = async (job) => { seen.push(job.prompt); return { ok: true, text: 'Plano feito pelo Codex do cliente' }; };
+    expect(await round(ORIGIN, token, { codex: fakeCodex }, { wait: false, fetcher: s.local })).toBe(0); // marca presença
+    expect((await (await ana('/public/connector')).json()).devices[0]).toMatchObject({ name: 'Notebook', online: true, tools: { codex: true, claude: false } });
+    expect((await ana('/public/projects/' + p.id + '/next', {})).status).toBe(202);
+    expect(await round(ORIGIN, token, { codex: fakeCodex }, { wait: true, fetcher: s.local })).toBe(1);
+    await vi.waitFor(async () => {
+      const done = (await (await ana('/public/projects')).json())[0];
+      expect(done.state).toBe('approval');
+      expect(done.stages[0]).toMatchObject({ role: 'scout', provider: 'codex-local', text: 'Plano feito pelo Codex do cliente' });
+    });
+    expect(seen[0]).toContain('Kodexa Scout');
+    expect(seen[0]).toContain('Aplicativo da oficina');
+
+    // A outra conta não vê o computador da Ana, e o token dela não pega trabalho da Bia.
+    expect((await (await bia('/public/connector')).json()).devices).toEqual([]);
+    expect((await (await bia('/public/provider')).json()).providers[0].state).toBe('available');
+    // O conector não usa cookie, e a rota com cookie é recusada (nada de CSRF por ali).
+    expect((await s.local(ORIGIN + '/public/connector/poll', { method: 'POST', headers: { Cookie: 'x=1', Authorization: 'Bearer ' + token }, body: '{}' })).status).toBe(400);
+    // Remover o computador derruba o token.
+    const id = (await (await ana('/public/connector')).json()).devices[0].id;
+    expect((await ana('/public/connector/revoke', { id })).status).toBe(200);
+    await expect(round(ORIGIN, token, { codex: fakeCodex }, { wait: false, fetcher: s.local })).rejects.toThrow(/não pareado ou removido/);
+    // O arquivo de dispositivos não guarda o token.
+    for (const f of ['connector-devices.json']) {
+      const user = (await import('node:fs')).readdirSync(s.dir).find((d) => d.length === 64 && (() => { try { readFileSync(join(s.dir, d, f)); return true; } catch { return false; } })())!;
+      expect(readFileSync(join(s.dir, user, f), 'utf8')).not.toContain(token.split('.')[3]);
+    }
+  });
+});
+
+describe('executores do conector (ferramentas falsas no lugar do codex/claude)', () => {
+  it('Codex: exec só leitura, efêmero, pedido pela entrada padrão, resposta do --output-last-message', async () => {
+    const dir = tempDir('kx-bin-');
+    const bin = join(dir, 'codex');
+    // Falso codex: grava os argumentos e a entrada, e escreve a resposta no arquivo pedido.
+    writeFileSync(bin, `#!/usr/bin/env node
+const fs=require('fs');const a=process.argv.slice(2);let input='';process.stdin.on('data',d=>input+=d).on('end',()=>{
+fs.writeFileSync(${JSON.stringify(join(dir, 'args.json'))},JSON.stringify({a,input,cwd:process.cwd()}));
+fs.writeFileSync(a[a.indexOf('--output-last-message')+1],'Resposta do Codex: '+input.length+' caracteres');});`);
+    chmodSync(bin, 0o755);
+    const work = tempDir('kx-work-');
+    const result = await codexRunner(bin, work)({ id: '1', tool: 'codex', prompt: '--não-é-opção\nPlaneje a oficina' });
+    expect(result).toEqual({ ok: true, text: 'Resposta do Codex: ' + '--não-é-opção\nPlaneje a oficina'.length + ' caracteres' });
+    const call = JSON.parse(readFileSync(join(dir, 'args.json'), 'utf8'));
+    expect(call.a).toEqual(['exec', '--sandbox', 'read-only', '--skip-git-repo-check', '--ephemeral', '--color', 'never', '--output-last-message', expect.any(String), '-']);
+    expect(call.input).toBe('--não-é-opção\nPlaneje a oficina');
+    expect(call.cwd.startsWith(work)).toBe(true);
+    expect((await import('node:fs')).readdirSync(work)).toEqual([]); // pasta da tarefa apagada
+  });
+
+  it('Claude Code: -p sem aprovar ferramentas e sem guardar sessão; falha vira motivo curto', async () => {
+    const dir = tempDir('kx-bin-');
+    const ok = join(dir, 'claude');
+    writeFileSync(ok, `#!/usr/bin/env node
+let i='';process.stdin.on('data',d=>i+=d).on('end',()=>process.stdout.write('ARGS '+process.argv.slice(2).join(' ')+' | '+i));`);
+    chmodSync(ok, 0o755);
+    const work = tempDir('kx-work-');
+    expect(await claudeRunner(ok, work)({ id: '1', tool: 'claude', prompt: 'oi' })).toEqual({ ok: true, text: 'ARGS -p --output-format text --permission-mode dontAsk --no-session-persistence | oi' });
+    const bad = join(dir, 'claude-bad');
+    writeFileSync(bad, '#!/bin/sh\necho "Not logged in · Please run /login" >&2\nexit 1\n');
+    chmodSync(bad, 0o755);
+    expect(await claudeRunner(bad, work)({ id: '2', tool: 'claude', prompt: 'oi' })).toEqual({ ok: false, error: 'Not logged in · Please run /login' });
+  });
+});

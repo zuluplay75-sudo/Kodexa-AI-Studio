@@ -10,6 +10,11 @@ do meio (0.**3**.0).
 
 ## [Não lançado]
 
+- Kodexa Conector: como no Habblaud original, os agentes podem usar o Codex (plano ChatGPT) ou o Claude Code (plano
+  Claude) do computador do próprio cliente, sem chave e sem custo de API. O cliente gera um código em Configurar
+  estúdio, roda o conector baixado do Kodexa e o painel mostra o computador ligado ou desligado, com Remover.
+  É a primeira opção para contas novas.
+
 - Escritório público: em Configurar estúdio › Conexões e limites das IAs, a pessoa escolhe a IA com uma explicação do
   que fazer e do que será usado (ChatGPT primeiro; Claude, Gemini e OpenAI por chave de API; Claude Code explicado como
   uso no próprio computador), vê o estado de cada uma (disponível, conectada, expirada, sem permissão, aguardando

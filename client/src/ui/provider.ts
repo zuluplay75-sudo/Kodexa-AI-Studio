@@ -46,6 +46,8 @@ export function accountProvider(account: Pick<AccountInfo, 'provider'> | undefin
  */
 export const PERSONAL_AI_PREFIX = 'kodexa:ai:';
 const PERSONAL_AI: Record<string, { short: string; name: string }> = {
+  'codex-local': { short: 'X', name: 'Codex no seu computador' },
+  'claude-local': { short: 'CC', name: 'Claude Code no seu computador' },
   chatgpt: { short: 'C', name: 'ChatGPT' },
   openai: { short: 'O', name: 'OpenAI' },
   anthropic: { short: 'A', name: 'Claude' },

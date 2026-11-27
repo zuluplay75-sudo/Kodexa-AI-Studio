@@ -156,7 +156,7 @@ describe('conexões de IA do cliente', () => {
     const info = await s.provider(ana);
     expect(info.defaultProvider).toBeNull();
     expect(info.providers.map((p: { provider: string; state: string }) => [p.provider, p.state])).toEqual([
-      ['chatgpt', 'pending_approval'], ['openai', 'available'], ['anthropic', 'available'], ['gemini', 'available'],
+      ['codex-local', 'available'], ['claude-local', 'available'], ['chatgpt', 'pending_approval'], ['openai', 'available'], ['anthropic', 'available'], ['gemini', 'available'],
     ]);
     // Sem liberação não há fluxo: o botão do painel nem aparece, e a rota não leva à OpenAI.
     expect((await s.request('/public/chatgpt', { cookie: ana })).location).toBe('/public/?chatgpt=pending');
@@ -181,7 +181,7 @@ describe('conexões de IA do cliente', () => {
     expect(back.location).toBe('/public/?chatgpt=connected');
     const info = await s.provider(ana);
     expect(info.defaultProvider).toBe('chatgpt'); // conta nova: o ChatGPT vira a padrão ao conectar
-    expect(info.providers[0]).toMatchObject({ provider: 'chatgpt', state: 'connected', account: 'ana@exemplo.test', model: 'modelo-do-plano' });
+    expect(info.providers.find((p: { provider: string }) => p.provider === 'chatgpt')).toMatchObject({ provider: 'chatgpt', state: 'connected', account: 'ana@exemplo.test', model: 'modelo-do-plano' });
     expect(JSON.stringify(info)).not.toMatch(/acesso-|renovacao-/);
     const p = await s.createProject(ana, 'App da oficina — briefing de teste');
     await s.runNext(ana, p.id, (x) => x.state === 'approval');
@@ -335,7 +335,7 @@ describe('conexões de IA do cliente', () => {
     expect((await s.request('/public/projects/' + p.id + '/next', { cookie: ana, body: {} })).status).toBe(202);
     await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     const off = await s.request('/public/provider', { cookie: ana, body: { disconnect: true, provider: 'chatgpt' } });
-    expect(off.json().providers[0].state).toBe('available');
+    expect(off.json().providers.find((p: { provider: string }) => p.provider === 'chatgpt').state).toBe('available');
     await vi.waitFor(() => expect(s.fake.revoked).toContain('renovacao-ana'));
     release();
     await vi.waitFor(async () => expect((await s.project(ana, p.id)).state).toBe('approval'));

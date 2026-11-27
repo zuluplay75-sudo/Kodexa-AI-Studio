@@ -6,7 +6,9 @@ export type KeyProvider = 'openai' | 'anthropic' | 'gemini';
 export type Connection = { provider: KeyProvider; model: string; key: string };
 
 /** Nome mostrado ao cliente para cada modalidade (nunca a chave). */
-export const PROVIDER_LABEL: Record<KeyProvider | 'chatgpt', string> = {
+export const PROVIDER_LABEL: Record<KeyProvider | 'chatgpt' | 'codex-local' | 'claude-local', string> = {
+  'codex-local': 'Codex no seu computador',
+  'claude-local': 'Claude Code no seu computador',
   chatgpt: 'ChatGPT',
   openai: 'OpenAI (chave de API)',
   anthropic: 'Claude (chave de API)',

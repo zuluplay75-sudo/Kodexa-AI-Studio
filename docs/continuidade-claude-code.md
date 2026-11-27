@@ -136,3 +136,19 @@ Informe a branch e o commit, o que mudou para o cliente, testes executados e seu
   `client/src/studio/ai-connections.test.ts`. Nenhuma chamada real a provedor foi feita.
 - **Próximo passo de publicação:** gerar `KODEXA_CREDENTIALS_KEY` no gerenciador de segredos do serviço público antes de
   publicar, ou as conexões continuarão só em memória.
+
+## Registro da rodada: Kodexa Conector (27/11/2026)
+
+- **Decisão do responsável:** “faça igual ao projeto original”. O Habblaud original (`main`, `faa1a01`) nunca chama
+  API de IA: lê as sessões do Claude Code/Codex do computador e, para agir, roda os programas oficiais ali
+  (`claude --bg`, `codex queue`), com um auxiliar no host (`scripts/codex-bridge.ts`) que pergunta ao servidor por
+  trabalho (`/api/host/*/poll` e `/ack`).
+- **Implementado:** o mesmo desenho entre a nuvem e o computador do cliente. `server/public-studio/connector.ts`
+  (pareamento por código, token por computador com hash, fila por conta com espera, presença de 45 s, remoção) e
+  `scripts/kodexa-connector.ts` (o conector, empacotado em `dist/server/kodexa-conector.mjs` e servido em
+  `/public/kodexa-conector.mjs`). Novas IAs `codex-local` e `claude-local` no roteamento por agente.
+- **Verificado (simulado):** testes do hub e de ponta a ponta com o conector real e ferramentas falsas; no navegador,
+  o código gerado no painel, o conector baixado do servidor de teste e pareado com ele, e duas etapas (Scout e
+  Manager) executadas pelo “computador do cliente”. Nenhuma chamada a Codex/Claude reais.
+- **Pendente:** testar com um Codex real logado num computador do cliente (Windows, macOS e Linux); decidir sobre o
+  Claude Code automatizado frente aos termos da Anthropic; publicar com a sessão do Codespace.

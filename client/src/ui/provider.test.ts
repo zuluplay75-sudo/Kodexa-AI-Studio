@@ -110,3 +110,10 @@ describe('personalAiChip: ChatGPT e reconexão', () => {
     expect(personalAiChip('kodexa:ai:gemini:reconnect')?.short).toBe('!');
   });
 });
+
+describe('personalAiChip: IA no computador do cliente', () => {
+  it('Codex e Claude Code locais têm chip próprio', () => {
+    expect(personalAiChip('kodexa:ai:codex-local')).toEqual({ short: 'X', label: 'IA conectada: Codex no seu computador' });
+    expect(personalAiChip('kodexa:ai:claude-local:reconnect')?.short).toBe('!');
+  });
+});

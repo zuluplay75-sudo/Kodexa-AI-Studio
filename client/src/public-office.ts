@@ -9,7 +9,7 @@ import { STAGES, type StudioProject } from '../../shared/studio-project';
 import { PERSONAL_AI_PREFIX } from './ui/provider';
 import './public-office.css';
 
-import { assignable, CHOICE_LABEL, CHOICES, DEFAULT_MODEL, GUIDE, initialChoice, LABEL, routeText, stateText, type Choice, type ProviderId, type Route, type Settings } from './studio/ai-connections';
+import { assignable, CHOICE_LABEL, CHOICES, connectorCommands, DEFAULT_MODEL, GUIDE, initialChoice, LABEL, LOCAL, routeText, stateText, type Choice, type Device, type ProviderId, type Route, type Settings } from './studio/ai-connections';
 
 /** Retorno do ChatGPT (?chatgpt=...): o que dizer ao voltar para o escritório. */
 const CHATGPT_RETURN: Record<string, string> = {
@@ -115,8 +115,30 @@ async function start(){
     function action(text:string,run:(b:HTMLButtonElement)=>void){const b=el('button',text);b.type='button';b.onclick=()=>run(b);return b;}
     function draw(){
       panel.replaceChildren(el('p',GUIDE[choice]));
-      if(choice==='claude-code')return;
       const info=settings.providers.find(p=>p.provider===choice)!;
+      if(LOCAL.includes(choice)){
+        // Como o Habblaud original: a IA roda no computador do cliente. Aqui só se pareia e se acompanha o computador.
+        const state=el('p',stateText(info));state.className='kodexa-ai__state is-'+info.state;panel.append(state);
+        const devices=el('ul');devices.className='kodexa-ai__devices';
+        const pairing=el('div');pairing.className='kodexa-ai__pairing';
+        const renderDevices=(list:Device[])=>{
+          devices.replaceChildren(...list.map(d=>{
+            const li=el('li',d.name+' · '+(d.online?'ligado'+(d.tools.codex?' · Codex':'')+(d.tools.claude?' · Claude Code':''):'desligado')+' ');
+            li.append(action('Remover',b=>{if(confirm('Remover '+d.name+'? O conector desse computador deixa de funcionar até ser pareado de novo.'))void (async()=>{b.disabled=true;try{renderDevices((await request<{devices:Device[]}>('/public/connector/revoke',{id:d.id})).devices);settings=await request<Settings>('/public/provider');changed(refresh);}catch(e){feedback.textContent=(e as Error).message;}finally{b.disabled=false;}})();}));
+            return li;
+          }));
+          if(!list.length)devices.append(el('li','Nenhum computador pareado ainda.'));
+        };
+        void request<{devices:Device[]}>('/public/connector').then(r=>renderDevices(r.devices)).catch(e=>feedback.textContent=(e as Error).message);
+        const generate=action('Gerar código de pareamento',b=>void (async()=>{b.disabled=true;try{
+          const r=await request<{code:string;expiresAt:number;server:string}>('/public/connector/pair',{});
+          const pre=el('pre',connectorCommands(r.server,r.code,choice==='claude-local'?'claude':'codex').join('\n'));
+          pairing.replaceChildren(el('p','Código: '+r.code+' (vale por 10 minutos, uma vez). No terminal do seu computador, com o Node.js instalado, rode:'),pre,
+            el('p','Deixe a janela do conector aberta. Quando ele estiver ligado, este painel mostra o computador como ligado.'));
+        }catch(e){feedback.textContent=(e as Error).message;}finally{b.disabled=false;}})());
+        panel.append(el('h4','Seus computadores'),devices,generate,pairing);
+        return;
+      }
       const state=el('p',stateText(info));state.className='kodexa-ai__state is-'+info.state;panel.append(state);
       const buttons=el('div');buttons.className='kodexa-ai__actions';
       if(choice==='chatgpt'){
@@ -125,7 +147,7 @@ async function start(){
           const go=el('a',info.state==='available'?'Continuar com ChatGPT':'Reconectar ChatGPT');go.href='/public/chatgpt';go.className='kodexa-ai__link';buttons.append(go);
         }
       }else{
-        const model=el('input');model.value=info.model??DEFAULT_MODEL[choice];model.setAttribute('aria-label','Modelo');model.maxLength=100;
+        const model=el('input');model.value=info.model??DEFAULT_MODEL[choice as keyof typeof DEFAULT_MODEL];model.setAttribute('aria-label','Modelo');model.maxLength=100;
         const key=el('input');key.type='password';key.placeholder='Cole a chave de API';key.autocomplete='off';key.setAttribute('aria-label','Chave de API');key.maxLength=512;
         panel.append(model,key);
         buttons.append(action(info.state==='available'?'Conectar':'Reconectar',b=>void send({provider:choice,model:model.value.trim(),key:key.value.trim()},b)));
