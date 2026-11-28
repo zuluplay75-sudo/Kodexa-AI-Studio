@@ -308,8 +308,12 @@ export async function main(argv: string[]): Promise<void> {
   }
   // Login na conta do ChatGPT: é ela que paga as tarefas (pelo plano). Sem login, o Codex não trabalha.
   if (codex && !(await codexLoggedIn(codex))) {
-    log('Entre na sua conta do ChatGPT na janela do navegador que vai abrir (login do Codex).');
-    if (!(await codexLogin(codex))) log('O login do Codex não foi concluído. Rode o conector de novo para tentar outra vez.');
+    // Só com alguém na janela (terminal interativo): sem ela (atalho sem console, testes automáticos), o login
+    // esperaria para sempre. Nesse caso avisa e segue; a tarefa que precisar dele volta com "Not logged in".
+    if (process.stdin.isTTY) {
+      log('Entre na sua conta do ChatGPT na janela do navegador que vai abrir (login do Codex).');
+      if (!(await codexLogin(codex))) log('O login do Codex não foi concluído. Rode o conector de novo para tentar outra vez.');
+    } else log('O Codex ainda não está logado na sua conta do ChatGPT. Abra o conector numa janela para fazer o login.');
   }
   if (codex) {
     runners.codex = codexRunner(codex, work);
